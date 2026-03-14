@@ -1,0 +1,23 @@
+# Credentials
+.env*
+!.env.example
+
+# Build artifacts
+.build/
+dist/
+
+# macOS
+.DS_Store
+**/.DS_Store
+*.swp
+*~
+
+# Xcode
+xcuserdata/
+*.xcscmblueprint
+DerivedData/
+*.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
