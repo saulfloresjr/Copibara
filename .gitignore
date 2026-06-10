@@ -1,6 +1,9 @@
 # Credentials
 .env
 
+# Private website source — never publish in OSS distribution
+site/
+
 # Build artifacts
 .build/
 dist/
