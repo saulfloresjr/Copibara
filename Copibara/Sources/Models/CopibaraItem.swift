@@ -7,7 +7,6 @@ enum ContentType: String, Codable, CaseIterable {
     case code
     case link
     case image
-    case file
 
     var label: String {
         switch self {
@@ -15,7 +14,6 @@ enum ContentType: String, Codable, CaseIterable {
         case .code:  return "CODE"
         case .link:  return "LINK"
         case .image: return "IMAGE"
-        case .file:  return "FILE"
         }
     }
 
@@ -25,7 +23,6 @@ enum ContentType: String, Codable, CaseIterable {
         case .code:  return "💻"
         case .link:  return "🔗"
         case .image: return "🖼"
-        case .file:  return "📁"
         }
     }
 }

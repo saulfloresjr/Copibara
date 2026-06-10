@@ -5,11 +5,15 @@ struct CopibaraCardView: View {
     let item: CopibaraItem
     let isSelected: Bool
     let isMultiSelect: Bool
+    var isYapivo: Bool = false
     let onSelect: () -> Void
     let onCopy: () -> Void
     let onDelete: () -> Void
     var onSaveImage: (() -> Void)? = nil
     var onDoubleClick: (() -> Void)? = nil
+
+    /// Yapivo energetic orange color
+    private let yapivOrange = Color(red: 1.0, green: 0.42, blue: 0.21) // #FF6B35
 
     @State private var isHovering = false
     @State private var cachedImage: NSImage?
@@ -142,16 +146,17 @@ struct CopibaraCardView: View {
         .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl))
         .shadow(
-            color: .black.opacity(0.06),
-            radius: 4,
-            y: 2
+            color: isYapivo ? yapivOrange.opacity(0.35) : .black.opacity(0.06),
+            radius: isYapivo ? 8 : 4,
+            y: isYapivo ? 0 : 2
         )
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.xl)
                 .stroke(
                     isSelected ? Color.appPrimary
+                    : isYapivo ? yapivOrange.opacity(0.5)
                     : Color.appBorder.opacity(0.5),
-                    lineWidth: isSelected ? 2 : 0.5
+                    lineWidth: isSelected ? 2 : (isYapivo ? 1.5 : 0.5)
                 )
         )
         .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xl))

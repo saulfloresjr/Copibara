@@ -15,7 +15,7 @@ private struct StoreData: Codable {
 final class CopibaraStore {
 
     var items: [CopibaraItem] = []
-    var pinboards: [Pinboard] = [.clipboard]
+    var pinboards: [Pinboard] = [.clipboard, .yapivo]
     var activeBoard: String = "all"
     var nextId: Int = 1
 
@@ -60,7 +60,10 @@ final class CopibaraStore {
         self.pinboards = store.pinboards
         self.nextId = store.nextId
 
-
+        // Migration: ensure default Yapivo board exists for existing users
+        if !pinboards.contains(where: { $0.id == "yapivo" }) {
+            pinboards.append(.yapivo)
+        }
 
         // Save on app quit to make sure nothing is lost
         NotificationCenter.default.addObserver(
@@ -83,6 +86,25 @@ final class CopibaraStore {
 
     // MARK: - Items
 
+    /// The default board ID for new non-voice items.
+    /// RULE: Never returns "yapivo" — only voice transcriptions go there.
+    /// If no non-Yapivo board exists, auto-creates the default Copibara board.
+    var defaultBoardId: String {
+        // If the user is viewing a specific non-Yapivo board, use it
+        if activeBoard != "all" && activeBoard != "yapivo",
+           pinboards.contains(where: { $0.id == activeBoard }) {
+            return activeBoard
+        }
+        // Fall back to first non-Yapivo board
+        if let board = pinboards.first(where: { $0.id != "yapivo" }) {
+            return board.id
+        }
+        // No non-Yapivo board exists — auto-create the default Copibara board
+        pinboards.insert(.clipboard, at: 0)
+        save()
+        return Pinboard.clipboard.id
+    }
+
     @discardableResult
     func addItem(content: String, type: ContentType? = nil, boardId: String? = nil) -> CopibaraItem {
         let detectedType = type ?? detectContentType(content)
@@ -92,7 +114,7 @@ final class CopibaraStore {
             type: detectedType,
             preview: generatePreview(content, type: detectedType),
             createdAt: Date(),
-            boardId: boardId ?? "clipboard",
+            boardId: boardId ?? defaultBoardId,
             size: content.utf8.count
         )
         nextId += 1
@@ -118,7 +140,7 @@ final class CopibaraStore {
             type: .image,
             preview: "📸 Screenshot (\(sizeKB) KB)",
             createdAt: Date(),
-            boardId: boardId ?? "clipboard",
+            boardId: boardId ?? defaultBoardId,
             size: imageData.count,
             imageFileName: fileName
         )
@@ -170,6 +192,8 @@ final class CopibaraStore {
     }
 
     func clearAll() {
+        // Safety: never clear when viewing "all" boards
+        guard activeBoard != "all" else { return }
         // Delete image files for items being cleared
         let toRemove = items.filter { $0.boardId == activeBoard }
         for item in toRemove {
@@ -179,6 +203,31 @@ final class CopibaraStore {
             }
         }
         items.removeAll { $0.boardId == activeBoard }
+        save()
+    }
+
+    /// Clear a specific board by its ID (used from the "All" board menu).
+    func clearBoard(id: String) {
+        let toRemove = items.filter { $0.boardId == id }
+        for item in toRemove {
+            if let fileName = item.imageFileName {
+                let fileURL = imagesDir.appendingPathComponent(fileName)
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
+        items.removeAll { $0.boardId == id }
+        save()
+    }
+
+    /// Nuclear option: clear every item across all boards.
+    func clearAllBoards() {
+        for item in items {
+            if let fileName = item.imageFileName {
+                let fileURL = imagesDir.appendingPathComponent(fileName)
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
+        items.removeAll()
         save()
     }
 
@@ -248,7 +297,7 @@ final class CopibaraStore {
     }
 
     func deletePinboard(id: String) {
-        guard let board = pinboards.first(where: { $0.id == id }), !board.isDefault else { return }
+        guard pinboards.contains(where: { $0.id == id }) else { return }
         // Delete all items in this board (including image files)
         let boardItems = items.filter { $0.boardId == id }
         for item in boardItems {
@@ -260,7 +309,7 @@ final class CopibaraStore {
         items.removeAll { $0.boardId == id }
         pinboards.removeAll { $0.id == id }
         if activeBoard == id {
-            activeBoard = "clipboard"
+            activeBoard = "all"
         }
         save()
     }

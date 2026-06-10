@@ -61,6 +61,7 @@ struct CopibaraPickerView: View {
     @State private var selectedIndex: Int = 0
     @State private var searchText: String = ""
     @AppStorage("pickerActiveBoard") private var activeBoard: String = "all"
+    @State private var activeTypeFilter: ContentType? = nil
     @State private var keyMonitor: Any?
     @State private var globalKeyMonitor: Any?
     @FocusState private var isSearchFocused: Bool
@@ -72,23 +73,31 @@ struct CopibaraPickerView: View {
         PickerSize(rawValue: pickerSizeRaw) ?? .compact
     }
 
+    /// Yapivo energetic orange
+    private let yapivOrange = Color(red: 1.0, green: 0.42, blue: 0.21)
+
     private var allTabs: [String] {
         ["all"] + store.pinboards.map(\.id)
     }
 
     private func computeItems() -> [CopibaraItem] {
-        let boardItems: [CopibaraItem]
+        var result: [CopibaraItem]
         if activeBoard == "all" {
-            boardItems = store.items
+            result = store.items
         } else {
-            boardItems = store.items.filter { $0.boardId == activeBoard }
+            result = store.items.filter { $0.boardId == activeBoard }
+        }
+
+        // Apply type filter
+        if let typeFilter = activeTypeFilter {
+            result = result.filter { $0.type == typeFilter }
         }
 
         if searchText.isEmpty {
-            return Array(boardItems.prefix(50))
+            return Array(result.prefix(50))
         }
         let query = searchText.lowercased()
-        return boardItems.filter {
+        return result.filter {
             $0.content.lowercased().contains(query) ||
             $0.type.label.lowercased().contains(query)
         }.prefix(50).map { $0 }
@@ -150,6 +159,35 @@ struct CopibaraPickerView: View {
                 .padding(.vertical, 6)
             }
             .background(Color.appSurface)
+
+            // Type Filter Chips
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    TypeFilterChip(
+                        label: "All",
+                        icon: "square.grid.2x2",
+                        isActive: activeTypeFilter == nil
+                    ) {
+                        activeTypeFilter = nil
+                        selectedIndex = 0
+                    }
+
+                    ForEach(ContentType.allCases, id: \.rawValue) { type in
+                        TypeFilterChip(
+                            label: type.label.capitalized,
+                            emoji: type.emoji,
+                            color: type.color,
+                            isActive: activeTypeFilter == type
+                        ) {
+                            activeTypeFilter = type
+                            selectedIndex = 0
+                        }
+                    }
+                }
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, 5)
+            }
+            .background(Color.appSurface)
             .overlay(alignment: .bottom) {
                 Rectangle().fill(Color.appBorder).frame(height: 0.5)
             }
@@ -172,7 +210,9 @@ struct CopibaraPickerView: View {
                             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                 PickerRow(
                                     item: item,
-                                    isSelected: index == selectedIndex
+                                    isSelected: index == selectedIndex,
+                                    isYapivo: item.boardId == "yapivo",
+                                    yapivOrange: yapivOrange
                                 )
                                 .id("\(activeBoard)-\(item.id)")
                                 .onTapGesture {
@@ -184,8 +224,15 @@ struct CopibaraPickerView: View {
                     }
                     .id(activeBoard)
                     .onChange(of: selectedIndex) { _, newValue in
-                        withAnimation(.easeOut(duration: 0.1)) {
-                            proxy.scrollTo("\(activeBoard)-\(items.indices.contains(newValue) ? items[newValue].id : 0)", anchor: .center)
+                        // Skip scroll animation on filter-reset (selectedIndex goes to 0)
+                        let itemId = items.indices.contains(newValue) ? items[newValue].id : 0
+                        let scrollId = "\(activeBoard)-\(itemId)"
+                        if newValue == 0 {
+                            proxy.scrollTo(scrollId, anchor: .top)
+                        } else {
+                            withAnimation(.easeOut(duration: 0.1)) {
+                                proxy.scrollTo(scrollId, anchor: .center)
+                            }
                         }
                     }
                 }
@@ -195,6 +242,7 @@ struct CopibaraPickerView: View {
             HStack(spacing: Spacing.sm) {
                 HintLabel(keys: "↑↓", label: "navigate")
                 HintLabel(keys: "tab", label: "board")
+                HintLabel(keys: "⇧tab", label: "filter")
                 HintLabel(keys: "↩", label: "paste")
                 HintLabel(keys: "esc", label: "close")
 
@@ -253,6 +301,9 @@ struct CopibaraPickerView: View {
         .onChange(of: searchText) {
             selectedIndex = 0
         }
+        .onChange(of: activeTypeFilter) {
+            selectedIndex = 0
+        }
         .onChange(of: pickerSizeRaw) { _, newValue in
             // Resize the hosting FloatingPanel and keep it on screen
             if let size = PickerSize(rawValue: newValue),
@@ -285,10 +336,25 @@ struct CopibaraPickerView: View {
                 onDismiss()
                 return nil
             case 48: // Tab
-                if let idx = allTabs.firstIndex(of: activeBoard) {
-                    let nextIdx = (idx + 1) % allTabs.count
-                    activeBoard = allTabs[nextIdx]
+                let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if mods.contains(.shift) {
+                    // Shift+Tab: cycle type filter (no animation for snappy feel)
+                    let allTypes = ContentType.allCases
+                    if let current = activeTypeFilter,
+                       let idx = allTypes.firstIndex(of: current) {
+                        let nextIdx = idx + 1
+                        activeTypeFilter = nextIdx < allTypes.count ? allTypes[nextIdx] : nil
+                    } else {
+                        activeTypeFilter = allTypes.first
+                    }
                     selectedIndex = 0
+                } else {
+                    // Tab: cycle boards
+                    if let idx = allTabs.firstIndex(of: activeBoard) {
+                        let nextIdx = (idx + 1) % allTabs.count
+                        activeBoard = allTabs[nextIdx]
+                        selectedIndex = 0
+                    }
                 }
                 return nil
             default:
@@ -362,14 +428,16 @@ private struct BoardTab: View {
 private struct PickerRow: View {
     let item: CopibaraItem
     let isSelected: Bool
+    var isYapivo: Bool = false
+    var yapivOrange: Color = Color.orange
 
     @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: Spacing.sm) {
-            // Type indicator
+            // Type indicator — orange for Yapivo
             Circle()
-                .fill(item.type.color)
+                .fill(isYapivo ? yapivOrange : item.type.color)
                 .frame(width: 6, height: 6)
 
             // Content preview
@@ -392,9 +460,15 @@ private struct PickerRow: View {
                         .truncationMode(.tail)
                 }
 
-                Text("\(item.type.label) · \(item.createdAt.timeAgoDisplay())")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.appTextTertiary)
+                HStack(spacing: 4) {
+                    if isYapivo {
+                        Text("🎙")
+                            .font(.system(size: 8))
+                    }
+                    Text("\(item.type.label) · \(item.createdAt.timeAgoDisplay())")
+                        .font(.system(size: 10))
+                        .foregroundStyle(isYapivo ? yapivOrange.opacity(0.7) : Color.appTextTertiary)
+                }
             }
 
             Spacer()
@@ -413,9 +487,15 @@ private struct PickerRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(
                     isSelected ? Color.appPrimary.opacity(0.3)
+                    : isYapivo ? yapivOrange.opacity(0.3)
                     : Color.clear,
-                    lineWidth: isSelected ? 1 : 0
+                    lineWidth: isYapivo && !isSelected ? 1 : (isSelected ? 1 : 0)
                 )
+        )
+        .shadow(
+            color: isYapivo ? yapivOrange.opacity(0.15) : Color.clear,
+            radius: isYapivo ? 4 : 0,
+            y: 0
         )
         .padding(.horizontal, 4)
         .onHover { isHovering = $0 }
@@ -430,6 +510,49 @@ private struct PickerRow: View {
             .appendingPathComponent("images", isDirectory: true)
             .appendingPathComponent(fileName)
         return NSImage(contentsOf: imagePath)
+    }
+}
+
+// MARK: - Type Filter Chip
+
+private struct TypeFilterChip: View {
+    let label: String
+    var icon: String? = nil
+    var emoji: String? = nil
+    var color: Color = .appPrimary
+    let isActive: Bool
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                if let icon = icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 8, weight: .medium))
+                } else if let emoji = emoji {
+                    Text(emoji)
+                        .font(.system(size: 9))
+                }
+                Text(label)
+                    .font(.system(size: 9, weight: isActive ? .semibold : .regular))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isActive ? color : Color.appTextSecondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isActive ? color.opacity(0.12) : (isHovering ? Color.appSurfaceHover : Color.clear))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isActive ? color.opacity(0.25) : Color.clear, lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
     }
 }
 

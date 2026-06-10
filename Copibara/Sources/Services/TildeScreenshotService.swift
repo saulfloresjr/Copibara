@@ -1,45 +1,44 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// Zero-delay screenshot capture via the tilde/backtick key (keyCode 50).
+/// Long-press screenshot via the tilde/backtick key (keyCode 50).
 ///
-/// **Design**: Crosshair appears INSTANTLY on keyDown. If the user releases quickly
-/// (< 150ms), it was a typing intent — crosshair is cancelled and a backtick is re-injected.
-/// If the user holds longer, the crosshair stays for drag-to-capture. On keyUp, the
-/// crosshair is cancelled (Escape) unless the user already captured a screenshot.
+/// **Behavior**:
+/// - **Quick tap** (< 100ms): Types a backtick character.
+/// - **Long press** (≥ 100ms): Crosshair appears while held. Drag to select area.
+///   - **Release after drag-capture**: Screenshot saved to clipboard.
+///   - **Release without capturing**: Crosshair dismissed, cursor returns to normal.
 ///
-/// This "assume screenshot, fallback to typing" approach eliminates all perceivable delay.
-///
-/// Uses CGEventTap for global input monitoring. Requires Accessibility permissions.
+/// Uses CGEventTap. Requires Accessibility permissions.
 final class TildeScreenshotService {
 
     // MARK: - Configuration
 
-    /// If the key is released within this window, treat it as a backtick tap (not a screenshot).
-    /// 150ms is fast enough that the crosshair flash is nearly imperceptible for typing.
-    private let tapThreshold: TimeInterval = 0.15
+    /// Tap threshold — releases faster than this produce a backtick.
+    /// 80ms distinguishes typing from intentional holds while keeping crosshair snappy.
+    private let tapThreshold: TimeInterval = 0.08  // 80ms
 
-    /// The keyCode for the grave accent / tilde key
     private let tildeKeyCode: Int64 = 50  // kVK_ANSI_Grave
-
-    /// Sentinel value stamped onto re-injected events so the tap ignores them
-    private let reinjectedSentinel: Int64 = 0x434F5049  // "COPI" in ASCII
+    private let reinjectedSentinel: Int64 = 0x434F5049  // "COPI"
 
     // MARK: - State
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var keyIsDown = false
-    private var screenshotFired = false
-    private var keyDownTime: UInt64 = 0  // mach_absolute_time for sub-ms precision
-    private var clipboardChangeCount: Int = 0  // pasteboard changeCount at keyDown
+    private var keyDownTime: UInt64 = 0
+    private var crosshairLaunched = false
+    private var clipboardChangeCount: Int = 0
+    private var crosshairWorkItem: DispatchWorkItem?
 
     // MARK: - Lifecycle
 
     func start() {
         guard eventTap == nil else { return }
 
-        let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
+        let eventMask: CGEventMask =
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.keyUp.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -53,55 +52,50 @@ final class TildeScreenshotService {
             },
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
-            print("⚠️ TildeScreenshotService: Failed to create event tap. Check Accessibility permissions.")
+            print("⚠️ TildeScreenshotService: Failed to create event tap.")
             return
         }
 
         eventTap = tap
-
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         runLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
-        print("✅ TildeScreenshotService: Started — press ~ for instant screenshot capture")
+        print("✅ TildeScreenshotService: Started — hold ~ for screenshot, tap ~ for backtick")
     }
 
     func stop() {
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-        }
+        crosshairWorkItem?.cancel()
+        crosshairWorkItem = nil
+        if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: false) }
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
         }
-
         eventTap = nil
         runLoopSource = nil
         keyIsDown = false
-        screenshotFired = false
-
+        crosshairLaunched = false
         print("🛑 TildeScreenshotService: Stopped")
     }
 
-    deinit {
-        stop()
-    }
+    deinit { stop() }
 
-    // MARK: - Event Handling
+    // MARK: - Event Routing
 
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-
-        guard keyCode == tildeKeyCode else {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passRetained(event)
         }
 
-        // Pass through events we re-injected ourselves (avoids infinite loop)
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        guard keyCode == tildeKeyCode else { return Unmanaged.passRetained(event) }
+
         if event.getIntegerValueField(.eventSourceUserData) == reinjectedSentinel {
             return Unmanaged.passRetained(event)
         }
 
-        // Ignore if any modifiers are held (Shift+`, Cmd+`, etc.)
         let flags = event.flags
         let modifierFlags: CGEventFlags = [.maskShift, .maskCommand, .maskAlternate, .maskControl]
         if !flags.intersection(modifierFlags).isEmpty {
@@ -109,131 +103,117 @@ final class TildeScreenshotService {
         }
 
         switch type {
-        case .keyDown:
-            return handleKeyDown(event: event)
-        case .keyUp:
-            return handleKeyUp(event: event)
-        case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            if let tap = eventTap {
-                CGEvent.tapEnable(tap: tap, enable: true)
-            }
-            return Unmanaged.passRetained(event)
-        default:
-            return Unmanaged.passRetained(event)
+        case .keyDown: return handleKeyDown(event: event)
+        case .keyUp:   return handleKeyUp(event: event)
+        default:       return Unmanaged.passRetained(event)
         }
     }
+
+    // MARK: - Key Down
 
     private func handleKeyDown(event: CGEvent) -> Unmanaged<CGEvent>? {
-        // Ignore key-repeat events
         if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
-            if keyIsDown { return nil }  // swallow repeats during screenshot mode
+            if keyIsDown { return nil }
             return Unmanaged.passRetained(event)
         }
 
-        // ── INSTANT TRIGGER ──
-        // Fire the crosshair NOW, on the very first keyDown. Zero delay.
         keyIsDown = true
-        screenshotFired = true
+        crosshairLaunched = false
         keyDownTime = mach_absolute_time()
         clipboardChangeCount = NSPasteboard.general.changeCount
-        triggerScreenshot()
 
-        // Swallow the keyDown — we'll handle everything on keyUp
-        return nil
+        // Schedule crosshair after tap threshold — cancelled if released early
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self, self.keyIsDown, !self.crosshairLaunched else { return }
+            self.crosshairLaunched = true
+            self.launchCrosshair()
+        }
+        crosshairWorkItem?.cancel()
+        crosshairWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + tapThreshold, execute: workItem)
+
+        return nil  // swallow
     }
 
-    private func handleKeyUp(event: CGEvent) -> Unmanaged<CGEvent>? {
-        guard keyIsDown else {
-            return Unmanaged.passRetained(event)
-        }
+    // MARK: - Key Up
 
+    private func handleKeyUp(event: CGEvent) -> Unmanaged<CGEvent>? {
+        guard keyIsDown else { return Unmanaged.passRetained(event) }
         keyIsDown = false
 
-        // Calculate how long the key was held (in seconds)
         let elapsed = machTimeToSeconds(mach_absolute_time() - keyDownTime)
 
-        if elapsed < tapThreshold {
-            // ── SHORT TAP ── User was typing a backtick, not taking a screenshot.
-            // Cancel the crosshair and re-inject the backtick character.
-            cancelScreenshot()
+        if !crosshairLaunched {
+            // ── QUICK TAP — crosshair never appeared ──
+            crosshairWorkItem?.cancel()
+            crosshairWorkItem = nil
             reinjectBacktick()
-            screenshotFired = false
-            print("⌨️ TildeScreenshotService: Quick tap (\(Int(elapsed * 1000))ms) — backtick re-injected")
-        } else {
-            // ── HELD ── User was in screenshot mode.
-            // Check if a screenshot already landed on the clipboard.
-            // Two-stage check: immediate → 80ms fallback (for in-flight captures).
-            let savedChangeCount = clipboardChangeCount
-            screenshotFired = false
+            print("⌨️ Tilde: tap (\(Int(elapsed * 1000))ms) → backtick")
+            return nil
+        }
 
-            let currentCount = NSPasteboard.general.changeCount
-            if currentCount != savedChangeCount {
-                // Already captured — nothing to cancel
-                print("📸 TildeScreenshotService: Screenshot captured (immediate detect)")
+        // ── LONG PRESS — crosshair was launched ──
+        // Check if a screenshot was captured (pasteboard changed).
+        // Give macOS 50ms to finalize the capture before checking.
+        let savedCount = clipboardChangeCount
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self = self else { return }
+            if NSPasteboard.general.changeCount != savedCount {
+                // User dragged-to-capture before releasing — screenshot saved
+                print("📸 Tilde: screenshot captured")
             } else {
-                // Not yet — give macOS 80ms to finish an in-flight capture
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-                    guard let self = self else { return }
-                    if NSPasteboard.general.changeCount != savedChangeCount {
-                        print("📸 TildeScreenshotService: Screenshot captured (delayed detect)")
-                    } else {
-                        self.cancelScreenshot()
-                        print("📸 TildeScreenshotService: No capture — crosshair dismissed")
-                    }
-                }
+                // No capture — dismiss the crosshair (send Escape)
+                self.dismissCrosshair()
+                print("📸 Tilde: released — crosshair dismissed")
             }
         }
 
+        crosshairLaunched = false
         return nil
     }
 
     // MARK: - Actions
 
-    /// Simulate ⌘⇧⌃4 INSTANTLY to trigger macOS interactive screenshot-to-clipboard.
-    /// The Control modifier copies to clipboard instead of saving to file.
-    private func triggerScreenshot() {
+    /// Fire ⌘⇧⌃4 to launch the macOS screenshot crosshair.
+    private func launchCrosshair() {
         let source = CGEventSource(stateID: .hidSystemState)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0x15, keyDown: true),
+              let up   = CGEvent(keyboardEventSource: source, virtualKey: 0x15, keyDown: false) else { return }
 
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x15, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x15, keyDown: false) else { return }
+        down.flags = [.maskCommand, .maskShift, .maskControl]
+        up.flags   = [.maskCommand, .maskShift, .maskControl]
 
-        keyDown.flags = [.maskCommand, .maskShift, .maskControl]
-        keyUp.flags = [.maskCommand, .maskShift, .maskControl]
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
 
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
-
-        print("📸 TildeScreenshotService: Crosshair activated instantly")
+        print("📸 Tilde: crosshair ON")
     }
 
-    /// Cancel the screenshot crosshair by simulating Escape.
-    private func cancelScreenshot() {
+    /// Send Escape to dismiss the macOS screenshot crosshair.
+    private func dismissCrosshair() {
         let source = CGEventSource(stateID: .hidSystemState)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0x35, keyDown: true),
+              let up   = CGEvent(keyboardEventSource: source, virtualKey: 0x35, keyDown: false) else { return }
 
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x35, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x35, keyDown: false) else { return }
-
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
     }
 
-    /// Re-inject a backtick character for quick taps so normal typing works.
+    /// Re-inject a backtick character.
     private func reinjectBacktick() {
         let source = CGEventSource(stateID: .hidSystemState)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0x32, keyDown: true),
+              let up   = CGEvent(keyboardEventSource: source, virtualKey: 0x32, keyDown: false) else { return }
 
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x32, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x32, keyDown: false) else { return }
+        down.setIntegerValueField(.eventSourceUserData, value: reinjectedSentinel)
+        up.setIntegerValueField(.eventSourceUserData, value: reinjectedSentinel)
 
-        keyDown.setIntegerValueField(.eventSourceUserData, value: reinjectedSentinel)
-        keyUp.setIntegerValueField(.eventSourceUserData, value: reinjectedSentinel)
-
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
     }
 
     // MARK: - Timing
 
-    /// Convert mach_absolute_time delta to seconds with nanosecond precision.
     private func machTimeToSeconds(_ elapsed: UInt64) -> TimeInterval {
         var info = mach_timebase_info_data_t()
         mach_timebase_info(&info)

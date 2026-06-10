@@ -1,6 +1,6 @@
 # Contributing to Copibara
 
-Thanks for your interest in contributing to [Copibara](https://copibara.com)! 🐾
+Thanks for your interest in contributing to Copibara! 🐾
 
 ## Getting Started
 
@@ -26,7 +26,7 @@ cd Copibara
 ## How to Contribute
 
 ### Reporting Bugs
-Open an [issue](https://github.com/saulfloresjr/Copibara/issues) with:
+Open an [issue](https://github.com/your-username/Copibara/issues) with:
 - macOS version
 - Steps to reproduce
 - Expected vs actual behavior
@@ -44,8 +44,8 @@ Open an [issue](https://github.com/saulfloresjr/Copibara/issues) with:
 - Keep functions focused and small
 - Add comments for non-obvious logic
 
-### Show Off Your Build 🎨
-If you fork Copibara and build something cool — custom features, themes, or tweaks — tag [@saulfloresjr](https://x.com/saulfloresjr) on X. I'd love to see what you come up with!
+### Icon Contest 🎨
+We're running a community icon contest! Submit your capybara icon design as a PR to `assets/community-icons/`. See [README](README.md) for details.
 
 ## Project Structure
 ```
