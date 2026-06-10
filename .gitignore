@@ -13,4 +13,3 @@ dist/
 # Xcode
 xcuserdata/
 *.xcscmblueprint
-.swiftpm/
