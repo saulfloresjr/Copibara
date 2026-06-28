@@ -12,11 +12,4 @@ struct Pinboard: Identifiable, Codable, Equatable {
         icon: "📋",
         isDefault: true
     )
-
-    static let yapivo = Pinboard(
-        id: "yapivo",
-        name: "Yapivo",
-        icon: "🎙",
-        isDefault: true
-    )
 }

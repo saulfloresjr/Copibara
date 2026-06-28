@@ -1,5 +1,6 @@
 # Credentials
-.env
+.env*
+!.env.example
 
 # Private website source — never publish in OSS distribution
 site/
@@ -10,10 +11,16 @@ dist/
 
 # macOS
 .DS_Store
+**/.DS_Store
 *.swp
 *~
 
 # Xcode
 xcuserdata/
 *.xcscmblueprint
+DerivedData/
+*.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+# Swift Package Manager
 .swiftpm/
+Package.resolved

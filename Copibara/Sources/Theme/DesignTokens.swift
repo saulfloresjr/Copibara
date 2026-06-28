@@ -32,6 +32,7 @@ extension Color {
     static let typeLink = Color(red: 88/255, green: 86/255, blue: 214/255)
     static let typeImage = Color(red: 255/255, green: 149/255, blue: 0/255)
     static let typeCode = Color(red: 48/255, green: 209/255, blue: 88/255)
+    static let typeFile = Color(red: 255/255, green: 69/255, blue: 58/255)
 
     // Convenience initializer for light/dark mode
     init(light: Color, dark: Color) {
@@ -55,6 +56,7 @@ extension ContentType {
         case .code:  return .typeCode
         case .link:  return .typeLink
         case .image: return .typeImage
+        case .file:  return .typeFile
         }
     }
 
