@@ -75,13 +75,30 @@ struct CopibaraApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Copibara", systemImage: "clipboard") {
+        MenuBarExtra {
             ContentView(store: services.store, onPasteItem: { item in
                 pasteItem(item)
             })
+        } label: {
+            Image(nsImage: CopibaraApp.menuBarIcon)
         }
         .menuBarExtraStyle(.window)
     }
+
+    /// Menu bar icon — a capybara hugging a clipboard, from the brand asset
+    /// `assets/brand/taskbar-icon-1.png` processed into a monochrome template PNG (white
+    /// background and clipboard interior made transparent). Set as a template image so
+    /// macOS tints it for light/dark menu bars automatically (like Ollama's llama).
+    /// Embedded as base64 so it works identically in `swift run` and the .app bundle,
+    /// with no SPM resource plumbing or build.sh changes.
+    static let menuBarIcon: NSImage = {
+        let base64 = "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"
+        let img = Data(base64Encoded: base64).flatMap { NSImage(data: $0) }
+            ?? NSImage(systemSymbolName: "clipboard", accessibilityDescription: "Copibara")!
+        img.size = NSSize(width: 20, height: 20)
+        img.isTemplate = true
+        return img
+    }()
 
     // MARK: - Picker
 
