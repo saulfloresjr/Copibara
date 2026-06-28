@@ -13,7 +13,6 @@ Copibara lives in your menu bar and silently captures everything you copy — te
 ## ✨ Features
 
 - **📋 Smart Clipboard History** — Automatically captures text, links, code, and images
-- **🎙️ Yapivo Integration** — Seamlessly syncs ideas, voice captures, and snippets from the Yapivo app into a dedicated board
 - **📸 Screenshot Capture** — Press `~` to capture screen regions directly into Copibara
 - **📌 Custom Boards** — Organize clips into pinboards for different projects
 - **⌨️ Keyboard-First** — `⌘⇧V` opens the picker, arrow keys navigate, Enter pastes

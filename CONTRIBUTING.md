@@ -43,7 +43,6 @@ Open an [issue](https://github.com/your-username/Copibara/issues) with:
 - Use `// MARK: -` for section organization
 - Keep functions focused and small
 - Add comments for non-obvious logic
-- Ensure new features are compatible with the Yapivo integration data structures and workflows
 
 ### Icon Contest 🎨
 We're running a community icon contest! Submit your capybara icon design as a PR to `assets/community-icons/`. See [README](README.md) for details.
