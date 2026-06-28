@@ -4,10 +4,11 @@ import Carbon.HIToolbox
 /// Long-press screenshot via the tilde/backtick key (keyCode 50).
 ///
 /// **Behavior**:
-/// - **Quick tap** (< 100ms): Types a backtick character.
-/// - **Long press** (≥ 100ms): Crosshair appears while held. Drag to select area.
-///   - **Release after drag-capture**: Screenshot saved to clipboard.
-///   - **Release without capturing**: Crosshair dismissed, cursor returns to normal.
+/// - **Quick tap** (< 80ms): Types a backtick character.
+/// - **Long press** (≥ 80ms): Launches the macOS region-capture crosshair (⌘⇧⌃4) and
+///   *latches* it — the crosshair stays up after you release the key, so the selection
+///   can be finished with the mouse one-handed. Completing the selection saves the
+///   screenshot to the clipboard (ingested by `CopibaraMonitor`); press Escape to cancel.
 ///
 /// Uses CGEventTap. Requires Accessibility permissions.
 final class TildeScreenshotService {
@@ -28,7 +29,6 @@ final class TildeScreenshotService {
     private var keyIsDown = false
     private var keyDownTime: UInt64 = 0
     private var crosshairLaunched = false
-    private var clipboardChangeCount: Int = 0
     private var crosshairWorkItem: DispatchWorkItem?
 
     // MARK: - Lifecycle
@@ -120,7 +120,6 @@ final class TildeScreenshotService {
         keyIsDown = true
         crosshairLaunched = false
         keyDownTime = mach_absolute_time()
-        clipboardChangeCount = NSPasteboard.general.changeCount
 
         // Schedule crosshair after tap threshold — cancelled if released early
         let workItem = DispatchWorkItem { [weak self] in
@@ -152,23 +151,13 @@ final class TildeScreenshotService {
             return nil
         }
 
-        // ── LONG PRESS — crosshair was launched ──
-        // Check if a screenshot was captured (pasteboard changed).
-        // Give macOS 50ms to finalize the capture before checking.
-        let savedCount = clipboardChangeCount
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            guard let self = self else { return }
-            if NSPasteboard.general.changeCount != savedCount {
-                // User dragged-to-capture before releasing — screenshot saved
-                print("📸 Tilde: screenshot captured")
-            } else {
-                // No capture — dismiss the crosshair (send Escape)
-                self.dismissCrosshair()
-                print("📸 Tilde: released — crosshair dismissed")
-            }
-        }
-
+        // ── LONG PRESS — crosshair is latched ──
+        // Leave the macOS crosshair up so the capture can be finished with the mouse
+        // one-handed. macOS owns the crosshair's lifecycle from here: complete the
+        // selection to capture (→ clipboard, ingested by CopibaraMonitor), or press
+        // Escape to cancel. No fragile post-release clipboard polling needed.
         crosshairLaunched = false
+        print("📸 Tilde: crosshair latched — finish with the mouse, or Esc to cancel")
         return nil
     }
 
@@ -187,16 +176,6 @@ final class TildeScreenshotService {
         up.post(tap: .cghidEventTap)
 
         print("📸 Tilde: crosshair ON")
-    }
-
-    /// Send Escape to dismiss the macOS screenshot crosshair.
-    private func dismissCrosshair() {
-        let source = CGEventSource(stateID: .hidSystemState)
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0x35, keyDown: true),
-              let up   = CGEvent(keyboardEventSource: source, virtualKey: 0x35, keyDown: false) else { return }
-
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
     }
 
     /// Re-inject a backtick character.
