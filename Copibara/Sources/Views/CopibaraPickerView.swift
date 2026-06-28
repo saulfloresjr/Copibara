@@ -56,9 +56,14 @@ enum PickerSize: String, CaseIterable {
 struct CopibaraPickerView: View {
     let store: CopibaraStore
     let onSelect: (CopibaraItem) -> Void
+    var onSelectMultiple: (([CopibaraItem]) -> Void)? = nil
     let onDismiss: () -> Void
 
     @State private var selectedIndex: Int = 0
+    /// All selected rows (indices into the current items list) for multi-paste.
+    @State private var selectedIndices: Set<Int> = [0]
+    /// Fixed end of a Shift range-selection.
+    @State private var selectionAnchor: Int = 0
     @State private var searchText: String = ""
     @AppStorage("pickerActiveBoard") private var activeBoard: String = "all"
     @State private var activeTypeFilter: ContentType? = nil
@@ -210,13 +215,15 @@ struct CopibaraPickerView: View {
                             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                 PickerRow(
                                     item: item,
-                                    isSelected: index == selectedIndex,
+                                    isSelected: selectedIndices.contains(index),
+                                    isFocused: index == selectedIndex,
+                                    isMulti: selectedIndices.count > 1,
                                     isYapivo: item.boardId == "yapivo",
                                     yapivOrange: yapivOrange
                                 )
                                 .id("\(activeBoard)-\(item.id)")
                                 .onTapGesture {
-                                    onSelect(item)
+                                    handleRowTap(index: index, item: item)
                                 }
                             }
                         }
@@ -243,7 +250,7 @@ struct CopibaraPickerView: View {
                 HintLabel(keys: "↑↓", label: "navigate")
                 HintLabel(keys: "tab", label: "board")
                 HintLabel(keys: "⇧tab", label: "filter")
-                HintLabel(keys: "↩", label: "paste")
+                HintLabel(keys: "↩", label: selectedIndices.count > 1 ? "paste \(selectedIndices.count)" : "paste")
                 HintLabel(keys: "esc", label: "close")
 
                 Spacer()
@@ -299,10 +306,13 @@ struct CopibaraPickerView: View {
             removeKeyMonitor()
         }
         .onChange(of: searchText) {
-            selectedIndex = 0
+            resetSelectionToTop()
         }
         .onChange(of: activeTypeFilter) {
-            selectedIndex = 0
+            resetSelectionToTop()
+        }
+        .onChange(of: activeBoard) {
+            resetSelectionToTop()
         }
         .onChange(of: pickerSizeRaw) { _, newValue in
             // Resize the hosting FloatingPanel and keep it on screen
@@ -313,6 +323,44 @@ struct CopibaraPickerView: View {
         }
     }
 
+    // MARK: - Selection
+
+    /// Extend (Shift) or collapse the multi-selection after the cursor moves.
+    private func updateSelection(extend: Bool) {
+        if extend {
+            let lo = min(selectionAnchor, selectedIndex)
+            let hi = max(selectionAnchor, selectedIndex)
+            selectedIndices = Set(lo...hi)
+        } else {
+            selectionAnchor = selectedIndex
+            selectedIndices = [selectedIndex]
+        }
+    }
+
+    /// Collapse selection back to the top item (on search/board/filter change).
+    private func resetSelectionToTop() {
+        selectedIndex = 0
+        selectionAnchor = 0
+        selectedIndices = [0]
+    }
+
+    /// Mouse click on a row: plain = paste one now; Shift or Cmd = toggle that row
+    /// individually (non-contiguous, out-of-order multi-select).
+    private func handleRowTap(index: Int, item: CopibaraItem) {
+        let mods = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if mods.contains(.shift) || mods.contains(.command) {
+            if selectedIndices.contains(index) {
+                selectedIndices.remove(index)
+            } else {
+                selectedIndices.insert(index)
+            }
+            selectedIndex = index
+            selectionAnchor = index
+        } else {
+            onSelect(item)
+        }
+    }
+
     // MARK: - Key Monitor
 
     private func installKeyMonitor() {
@@ -320,15 +368,33 @@ struct CopibaraPickerView: View {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             switch Int(event.keyCode) {
             case 126: // ↑ arrow
-                if selectedIndex > 0 { selectedIndex -= 1 }
+                if selectedIndex > 0 {
+                    selectedIndex -= 1
+                    updateSelection(extend: event.modifierFlags.contains(.shift))
+                }
                 return nil
             case 125: // ↓ arrow
                 let currentItems = computeItems()
-                if selectedIndex < currentItems.count - 1 { selectedIndex += 1 }
+                if selectedIndex < currentItems.count - 1 {
+                    selectedIndex += 1
+                    updateSelection(extend: event.modifierFlags.contains(.shift))
+                }
                 return nil
-            case 36: // Return
+            case 0: // 'A' — ⌘A selects all visible
+                if event.modifierFlags.contains(.command) {
+                    selectedIndices = Set(computeItems().indices)
+                    return nil
+                }
+                return event
+            case 36: // Return — paste the selection (all if multi, else the focused one)
                 let currentItems = computeItems()
-                if !currentItems.isEmpty && selectedIndex < currentItems.count {
+                guard !currentItems.isEmpty else { return nil }
+                let chosen = selectedIndices.sorted().compactMap {
+                    currentItems.indices.contains($0) ? currentItems[$0] : nil
+                }
+                if chosen.count > 1, let pasteMany = onSelectMultiple {
+                    pasteMany(chosen)
+                } else if currentItems.indices.contains(selectedIndex) {
                     onSelect(currentItems[selectedIndex])
                 }
                 return nil
@@ -428,30 +494,50 @@ private struct BoardTab: View {
 private struct PickerRow: View {
     let item: CopibaraItem
     let isSelected: Bool
+    var isFocused: Bool = false
+    var isMulti: Bool = false
     var isYapivo: Bool = false
     var yapivOrange: Color = Color.orange
 
     @State private var isHovering = false
+    /// Thumbnail decoded once and cached, so re-rendering on selection change
+    /// doesn't re-read the image from disk (which caused multi-select lag).
+    @State private var cachedImage: NSImage?
 
     var body: some View {
         HStack(spacing: Spacing.sm) {
-            // Type indicator — orange for Yapivo
-            Circle()
-                .fill(isYapivo ? yapivOrange : item.type.color)
-                .frame(width: 6, height: 6)
+            // Selection check (multi mode) or type dot — fixed width avoids row reflow
+            ZStack {
+                if isMulti {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(isSelected ? Color.appPrimary : Color.appTextTertiary)
+                } else {
+                    Circle()
+                        .fill(isYapivo ? yapivOrange : item.type.color)
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .frame(width: 14)
 
             // Content preview
             VStack(alignment: .leading, spacing: 2) {
-                if item.type == .image, let image = loadImage() {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxHeight: 48)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(Color.appBorder, lineWidth: 0.5)
-                        )
+                if item.type == .image {
+                    if let image = cachedImage {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxHeight: 48)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(Color.appBorder, lineWidth: 0.5)
+                            )
+                    } else {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.appSurfaceHover)
+                            .frame(width: 64, height: 48)
+                    }
                 } else {
                     Text(item.preview)
                         .font(.system(size: 12, weight: isSelected ? .medium : .regular))
@@ -486,10 +572,11 @@ private struct PickerRow: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(
-                    isSelected ? Color.appPrimary.opacity(0.3)
+                    isFocused ? Color.appPrimary.opacity(0.55)
+                    : isSelected ? Color.appPrimary.opacity(0.3)
                     : isYapivo ? yapivOrange.opacity(0.3)
                     : Color.clear,
-                    lineWidth: isYapivo && !isSelected ? 1 : (isSelected ? 1 : 0)
+                    lineWidth: isFocused ? 1.5 : (isSelected ? 1 : (isYapivo ? 1 : 0))
                 )
         )
         .shadow(
@@ -500,6 +587,11 @@ private struct PickerRow: View {
         .padding(.horizontal, 4)
         .onHover { isHovering = $0 }
         .contentShape(Rectangle())
+        .onAppear {
+            if item.type == .image && cachedImage == nil {
+                cachedImage = loadImage()
+            }
+        }
     }
 
     private func loadImage() -> NSImage? {

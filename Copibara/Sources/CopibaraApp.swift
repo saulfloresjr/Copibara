@@ -124,6 +124,9 @@ struct CopibaraApp: App {
             onSelect: { item in
                 sharedPasteItem(item)
             },
+            onSelectMultiple: { items in
+                sharedPasteItems(items)
+            },
             onDismiss: {
                 services.floatingPanel?.dismiss()
             }
@@ -206,6 +209,61 @@ struct CopibaraApp: App {
 
     private func pasteItem(_ item: CopibaraItem) {
         CopibaraApp.sharedPasteItem(item)
+    }
+
+    /// Paste several items into the previously active app — e.g. dropping multiple
+    /// screenshots into a chat input. Most apps only ingest one image per ⌘V, so this
+    /// fires a tight sequence of pastes. Payloads are pre-resolved off the timed loop
+    /// and the gap is kept small so it feels close to instant.
+    static func sharedPasteItems(_ items: [CopibaraItem]) {
+        guard !items.isEmpty else { return }
+        let services = CopibaraServices.shared
+
+        services.monitor?.stop()
+        services.floatingPanel?.dismiss()
+        services.floatingPanel = nil
+        NSApp.keyWindow?.close()
+
+        // Pre-resolve each item's clipboard payload so the timed loop never hits disk.
+        enum Payload { case image(Data); case text(String) }
+        var payloads = [Payload]()
+        for item in items {
+            if let fileName = item.imageFileName {
+                let url = services.store.imagesDir.appendingPathComponent(fileName)
+                if let data = try? Data(contentsOf: url) { payloads.append(.image(data)) }
+            } else if !item.content.isEmpty {
+                payloads.append(.text(item.content))
+            }
+        }
+        guard !payloads.isEmpty else { services.monitor?.start(); return }
+
+        let isTrusted = AXIsProcessTrusted()
+        let targetApp = services.previousApp
+        NSApp.deactivate()
+
+        let leadIn = 0.15      // hand focus back to the target app
+        let interval = 0.15    // tight gap between pastes
+        let pasteboard = NSPasteboard.general
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + leadIn - 0.05) {
+            targetApp?.activate()
+        }
+        for (i, payload) in payloads.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + leadIn + Double(i) * interval) {
+                pasteboard.clearContents()
+                switch payload {
+                case .image(let data): pasteboard.setData(data, forType: .png)
+                case .text(let text):  pasteboard.setString(text, forType: .string)
+                }
+                if isTrusted { CopibaraApp.simulatePaste() }
+            }
+        }
+
+        let done = leadIn + Double(payloads.count) * interval + 0.3
+        DispatchQueue.main.asyncAfter(deadline: .now() + done) {
+            services.monitor?.start()
+            print("[Copibara] multi-paste: \(payloads.count) item(s) done")
+        }
     }
 
     /// Simulate ⌘V using CGEvent to paste clipboard contents.
