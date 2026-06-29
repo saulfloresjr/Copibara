@@ -4,8 +4,8 @@ import Carbon.HIToolbox
 /// Long-press screenshot via the tilde/backtick key (keyCode 50).
 ///
 /// **Behavior**:
-/// - **Quick tap** (< 100ms): Types a backtick character.
-/// - **Long press** (≥ 100ms): Crosshair appears while held. Drag to select area.
+/// - **Quick tap** (< 50ms): Types a backtick character.
+/// - **Long press** (≥ 50ms): Crosshair appears while held. Drag to select area.
 ///   - **Release after drag-capture**: Screenshot saved to clipboard.
 ///   - **Release without capturing**: Crosshair dismissed, cursor returns to normal.
 ///
@@ -15,8 +15,9 @@ final class TildeScreenshotService {
     // MARK: - Configuration
 
     /// Tap threshold — releases faster than this produce a backtick.
-    /// 80ms distinguishes typing from intentional holds while keeping crosshair snappy.
-    private let tapThreshold: TimeInterval = 0.08  // 80ms
+    /// 50ms is tuned for fast users who want the crosshair to engage near-instantly.
+    /// Lower = snappier (risk: fast `~` taps trigger the crosshair); raise if that bites.
+    private let tapThreshold: TimeInterval = 0.05  // 50ms
 
     private let tildeKeyCode: Int64 = 50  // kVK_ANSI_Grave
     private let reinjectedSentinel: Int64 = 0x434F5049  // "COPI"
