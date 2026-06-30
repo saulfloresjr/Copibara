@@ -23,6 +23,9 @@ final class CopibaraStore {
     /// Used to prevent internal copy operations from creating duplicates.
     var suppressNextChange = false
 
+    /// Transient status message shown as a toast in the main window.
+    var toast: String?
+
     private let fileURL: URL
     let imagesDir: URL
 
@@ -177,6 +180,32 @@ final class CopibaraStore {
                 } catch {
                     print("Failed to save image: \(error)")
                 }
+            }
+        }
+    }
+
+    /// Remove the background from an image item via Vision, putting the transparent-
+    /// background cutout on the clipboard (also captured as a new clip by the monitor).
+    func removeBackground(id: Int) {
+        guard let item = items.first(where: { $0.id == id }),
+              let fileName = item.imageFileName else {
+            toast = "That clip isn't an image"
+            return
+        }
+        let url = imagesDir.appendingPathComponent(fileName)
+        toast = "Removing background…"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let data = try? Data(contentsOf: url),
+                  let cutout = SubjectExtractor.cutout(from: data) else {
+                DispatchQueue.main.async { self?.toast = "Couldn't find a subject to lift" }
+                return
+            }
+            DispatchQueue.main.async {
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setData(cutout, forType: .png)
+                let dims = NSBitmapImageRep(data: cutout).map { " (\($0.pixelsWide)×\($0.pixelsHigh))" } ?? ""
+                self?.toast = "Background removed\(dims) — paste anywhere, also saved as a clip"
             }
         }
     }

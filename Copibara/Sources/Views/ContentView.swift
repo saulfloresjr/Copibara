@@ -272,6 +272,25 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.2), value: showClearAllBoardsConfirm)
         .background(Color.appBackground)
         .frame(width: 720, height: 520)
+        .overlay(alignment: .bottom) {
+            if let toast = store.toast {
+                Text(toast)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color.black.opacity(0.82)))
+                    .padding(.bottom, 18)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: store.toast)
+        .onChange(of: store.toast) { _, newValue in
+            guard newValue != nil, newValue != "Removing background…" else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+                if store.toast == newValue { store.toast = nil }
+            }
+        }
         .onKeyPress(.return) {
             // Enter: paste the single selected item
             guard !isModalOpen else { return .ignored }
