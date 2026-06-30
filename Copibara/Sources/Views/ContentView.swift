@@ -401,6 +401,21 @@ struct ContentView: View {
         return Data(base64Encoded: base64).flatMap { NSImage(data: $0) }
     }()
 
+    /// Launch the on-screen element picker, then drop the cutout on the clipboard.
+    private func grabElement() {
+        ScreenElementPicker.shared.start(
+            status: { store.toast = $0 },
+            completion: { data in
+                guard let data else { return }
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setData(data, forType: .png)
+                let dims = NSBitmapImageRep(data: data).map { " (\($0.pixelsWide)×\($0.pixelsHigh))" } ?? ""
+                store.toast = "Element grabbed\(dims) — paste anywhere, also saved as a clip"
+            }
+        )
+    }
+
     private var header: some View {
         HStack(spacing: Spacing.base) {
             // Logo
@@ -484,6 +499,19 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .help("Clear All")
                 }
+
+                Button {
+                    grabElement()
+                } label: {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.appTextSecondary)
+                        .frame(width: 28, height: 28)
+                        .background(Color.appSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+                }
+                .buttonStyle(.plain)
+                .help("Grab an element from the screen")
 
                 Button {
                     showAddItemSheet = true
