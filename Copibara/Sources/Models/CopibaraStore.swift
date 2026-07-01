@@ -210,6 +210,33 @@ final class CopibaraStore {
         }
     }
 
+    /// AI-upscale a small image for sharing (waifu2x 2× + Lanczos to target) and put
+    /// the result on the clipboard. Does not add a new clip.
+    func aiUpscale(id: Int) {
+        guard let item = items.first(where: { $0.id == id }),
+              let fileName = item.imageFileName else {
+            toast = "That clip isn't an image"
+            return
+        }
+        let url = imagesDir.appendingPathComponent(fileName)
+        toast = "Enhancing…"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let data = try? Data(contentsOf: url),
+                  let upscaled = AIUpscaler.upscaledPNG(from: data) else {
+                DispatchQueue.main.async { self?.toast = "Couldn't enhance that image" }
+                return
+            }
+            DispatchQueue.main.async {
+                self?.suppressNextChange = true
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setData(upscaled, forType: .png)
+                let dims = NSBitmapImageRep(data: upscaled).map { " (\($0.pixelsWide)×\($0.pixelsHigh))" } ?? ""
+                self?.toast = "Enhanced\(dims) — paste anywhere (⌘V)"
+            }
+        }
+    }
+
     func deleteItem(id: Int) {
         // If it's an image item, also delete the image file
         if let item = items.first(where: { $0.id == id }), let fileName = item.imageFileName {

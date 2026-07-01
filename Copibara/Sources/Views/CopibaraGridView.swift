@@ -83,6 +83,7 @@ struct CopibaraGridView: View {
                                                 },
                                                 onSaveImage: { store.exportImage(for: item.id) },
                                                 onRemoveBackground: { store.removeBackground(id: item.id) },
+                                                onAIUpscale: { store.aiUpscale(id: item.id) },
                                                 onDoubleClick: {
                                                     onDoubleClick?(item)
                                                 }

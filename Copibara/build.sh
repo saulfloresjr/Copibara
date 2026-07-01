@@ -61,6 +61,14 @@ fi
 # Copy binary
 cp "${BUILD_DIR}/${APP_NAME}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 
+# Copy the SPM resource bundle (bundled models/assets) next to the binary so
+# Bundle.module resolves in the shipped .app (e.g. the waifu2x upscale model).
+RES_BUNDLE="${BUILD_DIR}/${APP_NAME}_${APP_NAME}.bundle"
+if [ -d "${RES_BUNDLE}" ]; then
+    cp -R "${RES_BUNDLE}" "${APP_DIR}/Contents/MacOS/"
+    echo "   ✅ Resource bundle copied ($(basename "${RES_BUNDLE}"))"
+fi
+
 # Create Info.plist
 cat > "${APP_DIR}/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
