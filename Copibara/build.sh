@@ -61,11 +61,16 @@ fi
 # Copy binary
 cp "${BUILD_DIR}/${APP_NAME}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 
-# Copy the SPM resource bundle (bundled models/assets) next to the binary so
-# Bundle.module resolves in the shipped .app (e.g. the waifu2x upscale model).
+# Copy the SPM resource bundle (bundled models/assets) so Bundle.module resolves
+# in the shipped .app — e.g. the waifu2x upscale model.
+#
+# It MUST go in Contents/Resources, not Contents/MacOS: a nested .bundle beside
+# the executable makes codesign reject the whole app with "bundle format
+# unrecognized, invalid, or unsuitable". Contents/Resources is both the valid
+# layout and one of the paths Bundle.module searches (Bundle.main.resourceURL).
 RES_BUNDLE="${BUILD_DIR}/${APP_NAME}_${APP_NAME}.bundle"
 if [ -d "${RES_BUNDLE}" ]; then
-    cp -R "${RES_BUNDLE}" "${APP_DIR}/Contents/MacOS/"
+    cp -R "${RES_BUNDLE}" "${APP_DIR}/Contents/Resources/"
     echo "   ✅ Resource bundle copied ($(basename "${RES_BUNDLE}"))"
 fi
 
