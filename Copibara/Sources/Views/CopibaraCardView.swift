@@ -12,7 +12,7 @@ struct CopibaraCardView: View {
     let onDelete: () -> Void
     var onSaveImage: (() -> Void)? = nil
     var onRemoveBackground: (() -> Void)? = nil
-    var onAIUpscale: (() -> Void)? = nil
+    var onAIUpscale: ((UpscaleMode) -> Void)? = nil
     var onDoubleClick: (() -> Void)? = nil
 
     /// Yapivo energetic orange color
@@ -206,7 +206,14 @@ struct CopibaraCardView: View {
                 Button("Remove Background") { onRemoveBackground() }
             }
             if item.type == .image, let onAIUpscale = onAIUpscale {
-                Button("Upscale (AI)") { onAIUpscale() }
+                Menu("Upscale (AI)") {
+                    Button("Fit for sharing (\(Int(AIUpscaler.defaultTarget))px)") {
+                        onAIUpscale(.fit(AIUpscaler.defaultTarget))
+                    }
+                    Divider()
+                    Button("2×") { onAIUpscale(.times2) }
+                    Button("4×") { onAIUpscale(.times4) }
+                }
             }
             Divider()
             Button("Delete", role: .destructive) { onDelete() }

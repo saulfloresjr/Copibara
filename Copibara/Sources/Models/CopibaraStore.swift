@@ -324,9 +324,9 @@ final class CopibaraStore {
         }
     }
 
-    /// AI-upscale a small image for sharing (waifu2x 2× + Lanczos to target) and put
-    /// the result on the clipboard. Does not add a new clip.
-    func aiUpscale(id: Int) {
+    /// AI-upscale an image and put the result on the clipboard. Does not add a new
+    /// clip — you asked for a bigger version of this image, not a second copy of it.
+    func aiUpscale(id: Int, mode: UpscaleMode = .fit(AIUpscaler.defaultTarget)) {
         guard let item = items.first(where: { $0.id == id }),
               let fileName = item.imageFileName else {
             toast = "That clip isn't an image"
@@ -335,8 +335,14 @@ final class CopibaraStore {
         let url = imagesDir.appendingPathComponent(fileName)
         toast = "Enhancing…"
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let data = try? Data(contentsOf: url),
-                  let upscaled = AIUpscaler.upscaledPNG(from: data) else {
+            guard let data = try? Data(contentsOf: url) else {
+                DispatchQueue.main.async { self?.toast = "Couldn't read that image" }
+                return
+            }
+            let upscaled = AIUpscaler.upscaledPNG(from: data, mode: mode) { status in
+                DispatchQueue.main.async { self?.toast = status }
+            }
+            guard let upscaled else {
                 DispatchQueue.main.async { self?.toast = "Couldn't enhance that image" }
                 return
             }
@@ -345,7 +351,8 @@ final class CopibaraStore {
                 let pb = NSPasteboard.general
                 pb.clearContents()
                 pb.setData(upscaled, forType: .png)
-                let dims = NSBitmapImageRep(data: upscaled).map { " (\($0.pixelsWide)×\($0.pixelsHigh))" } ?? ""
+                let dims = NSBitmapImageRep(data: upscaled)
+                    .map { " (\($0.pixelsWide)×\($0.pixelsHigh))" } ?? ""
                 self?.toast = "Enhanced\(dims) — paste anywhere (⌘V)"
             }
         }
