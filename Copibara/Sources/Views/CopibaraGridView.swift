@@ -14,8 +14,10 @@ struct CopibaraGridView: View {
     @State private var typeOrder: [ContentType] = ContentType.allCases
     @State private var draggedType: ContentType? = nil
 
+    // Gap sized so a card's coloured glow (8pt radius) has clearance on every side
+    // instead of bleeding into its neighbour.
     private let columns = [
-        GridItem(.adaptive(minimum: 190, maximum: 280), spacing: Spacing.base)
+        GridItem(.adaptive(minimum: 190, maximum: 280), spacing: Spacing.lg)
     ]
 
     /// Whether multi-select mode is active (more than 1 item selected).
@@ -61,13 +63,14 @@ struct CopibaraGridView: View {
                                 sectionHeader(section)
 
                                 if !collapsedSections.contains(section.id) {
-                                    LazyVGrid(columns: columns, spacing: Spacing.base) {
+                                    LazyVGrid(columns: columns, spacing: Spacing.lg) {
                                         ForEach(section.items) { item in
                                             CopibaraCardView(
                                                 item: item,
                                                 isSelected: selectedItemIds.contains(item.id),
                                                 isMultiSelect: isMultiSelect,
                                                 isYapivo: item.boardId == "yapivo",
+                                                isForaged: item.capture != nil,
                                                 onSelect: {
                                                     handleClick(item: item, items: items)
                                                 },

@@ -219,6 +219,7 @@ struct CopibaraPickerView: View {
                                     isFocused: index == selectedIndex,
                                     isMulti: selectedIndices.count > 1,
                                     isYapivo: item.boardId == "yapivo",
+                                    isForaged: item.capture != nil,
                                     yapivOrange: yapivOrange
                                 )
                                 .id("\(activeBoard)-\(item.id)")
@@ -497,7 +498,15 @@ private struct PickerRow: View {
     var isFocused: Bool = false
     var isMulti: Bool = false
     var isYapivo: Bool = false
+    var isForaged: Bool = false
     var yapivOrange: Color = Color.orange
+
+    /// Same language as the grid card: orange for voice, green for foraged.
+    private var accent: Color? {
+        if isYapivo { return yapivOrange }
+        if isForaged { return .forageAccent }
+        return nil
+    }
 
     @State private var isHovering = false
     /// Thumbnail decoded once and cached, so re-rendering on selection change
@@ -514,7 +523,7 @@ private struct PickerRow: View {
                         .foregroundStyle(isSelected ? Color.appPrimary : Color.appTextTertiary)
                 } else {
                     Circle()
-                        .fill(isYapivo ? yapivOrange : item.type.color)
+                        .fill(accent ?? item.type.color)
                         .frame(width: 6, height: 6)
                 }
             }
@@ -550,10 +559,13 @@ private struct PickerRow: View {
                     if isYapivo {
                         Text("🎙")
                             .font(.system(size: 8))
+                    } else if isForaged {
+                        Text("🌿")
+                            .font(.system(size: 8))
                     }
                     Text("\(item.type.label) · \(item.createdAt.timeAgoDisplay())")
                         .font(.system(size: 10))
-                        .foregroundStyle(isYapivo ? yapivOrange.opacity(0.7) : Color.appTextTertiary)
+                        .foregroundStyle(accent?.opacity(0.7) ?? Color.appTextTertiary)
                 }
             }
 
@@ -574,14 +586,13 @@ private struct PickerRow: View {
                 .stroke(
                     isFocused ? Color.appPrimary.opacity(0.55)
                     : isSelected ? Color.appPrimary.opacity(0.3)
-                    : isYapivo ? yapivOrange.opacity(0.3)
-                    : Color.clear,
-                    lineWidth: isFocused ? 1.5 : (isSelected ? 1 : (isYapivo ? 1 : 0))
+                    : accent?.opacity(0.3) ?? Color.clear,
+                    lineWidth: isFocused ? 1.5 : (isSelected ? 1 : (accent != nil ? 1 : 0))
                 )
         )
         .shadow(
-            color: isYapivo ? yapivOrange.opacity(0.15) : Color.clear,
-            radius: isYapivo ? 4 : 0,
+            color: accent?.opacity(0.15) ?? Color.clear,
+            radius: accent != nil ? 4 : 0,
             y: 0
         )
         .padding(.horizontal, 4)

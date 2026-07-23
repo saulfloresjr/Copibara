@@ -6,6 +6,7 @@ struct CopibaraCardView: View {
     let isSelected: Bool
     let isMultiSelect: Bool
     var isYapivo: Bool = false
+    var isForaged: Bool = false
     let onSelect: () -> Void
     let onCopy: () -> Void
     let onDelete: () -> Void
@@ -16,6 +17,14 @@ struct CopibaraCardView: View {
 
     /// Yapivo energetic orange color
     private let yapivOrange = Color(red: 1.0, green: 0.42, blue: 0.21) // #FF6B35
+
+    /// Cards earned by a capture pipeline get a coloured glow that says where they
+    /// came from at a glance: orange for voice, green for foraged.
+    private var accent: Color? {
+        if isYapivo { return yapivOrange }
+        if isForaged { return .forageAccent }
+        return nil
+    }
 
     @State private var isHovering = false
     @State private var cachedImage: NSImage?
@@ -152,24 +161,29 @@ struct CopibaraCardView: View {
             .padding(.bottom, Spacing.md)
         }
         .frame(minHeight: 140)
-        .background(Color.appSurface)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl))
-        .shadow(
-            color: isYapivo ? yapivOrange.opacity(0.35) : .black.opacity(0.06),
-            radius: isYapivo ? 8 : 4,
-            y: isYapivo ? 0 : 2
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .fill(Color.appSurface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.xl)
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                 .stroke(
                     isSelected ? Color.appPrimary
-                    : isYapivo ? yapivOrange.opacity(0.5)
-                    : Color.appBorder.opacity(0.5),
-                    lineWidth: isSelected ? 2 : (isYapivo ? 1.5 : 0.5)
+                    : accent?.opacity(0.5) ?? Color.appBorder.opacity(0.5),
+                    lineWidth: isSelected ? 2 : (accent != nil ? 1.5 : 0.5)
                 )
         )
-        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xl))
-        .drawingGroup()
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        // Shadow LAST and outside any rasterisation. A .drawingGroup() used to sit at
+        // the end of this chain, which rendered the card into a rectangular offscreen
+        // buffer and clipped the coloured glow to those bounds — the boxy halo around
+        // the rounded corners. Dropping it lets the glow follow the corner radius.
+        .shadow(
+            color: accent?.opacity(0.35) ?? .black.opacity(0.06),
+            radius: accent != nil ? 8 : 4,
+            y: accent != nil ? 0 : 2
+        )
+        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .onHover { isHovering = $0 }
         .onAppear {
             // Cache image once on appear, not on every render
