@@ -91,6 +91,26 @@ final class TildeScreenshotService {
         }
 
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+
+        // ── Forage toggle (⌘⇧F) ──
+        // Handled here rather than as a Carbon hotkey specifically so it can be
+        // *conditionally* swallowed. RegisterEventHotKey claims a chord globally with
+        // no way to decline it, which would break Find-in-Files in VS Code and Xcode.
+        // An event tap lets us hand the keystroke back to the apps that own it.
+        if keyCode == Shortcuts.forageKeyCode {
+            let flags = event.flags
+            if flags.contains(Shortcuts.forageRequiredFlags),
+               flags.intersection(Shortcuts.forageForbiddenFlags).isEmpty {
+                if Shortcuts.ownsForageChord() {
+                    return Unmanaged.passRetained(event)   // editor's shortcut, not ours
+                }
+                if type == .keyDown, event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                    DispatchQueue.main.async { ForageMode.shared.toggle() }
+                }
+                return nil   // swallow both down and up so no stray ⌘⇧F leaks through
+            }
+        }
+
         guard keyCode == tildeKeyCode else { return Unmanaged.passRetained(event) }
 
         if event.getIntegerValueField(.eventSourceUserData) == reinjectedSentinel {

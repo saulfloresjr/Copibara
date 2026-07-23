@@ -42,14 +42,9 @@ final class CopibaraServices: ObservableObject {
             handler: togglePicker
         )
 
-        // 4. Forage mode toggle + auto-arm watcher
-        HotkeyCenter.shared.register(
-            .forage,
-            keycode: Shortcuts.forageKeyCode,
-            modifiers: Shortcuts.forageModifiers
-        ) {
-            MainActor.assumeIsolated { ForageMode.shared.toggle() }
-        }
+        // 4. Forage mode auto-arm watcher.
+        //    Its ⌘⇧F toggle is handled by the event tap below, not registered here,
+        //    so editors keep their Find-in-Files. See Shortcuts.ownsForageChord().
         MainActor.assumeIsolated { ForageMode.shared.startWatching() }
 
         // 5. Tilde long-press screenshot
