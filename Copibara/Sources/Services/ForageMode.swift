@@ -59,6 +59,10 @@ final class ForageMode {
     private var lastActivity = Date()
     private var watchTimer: Timer?
 
+    /// Host the user manually disarmed on. Auto-arm stays off for it until they
+    /// navigate somewhere else, so a deliberate "off" isn't undone by the watcher.
+    private var autoArmSuppressedHost: String?
+
     private enum Keys {
         static let autoArm = "forage.autoArmEnabled"
         static let allowlist = "forage.allowlist"
@@ -73,7 +77,21 @@ final class ForageMode {
     // MARK: - Arming
 
     func toggle() {
-        if isArmed { disarm(announce: true) } else { arm(automatically: false) }
+        if isArmed {
+            // Turning it off by hand on an allowlisted site has to STICK. Without
+            // this, the watcher sees "on reddit.com, not armed" two seconds later
+            // and re-arms — so the toggle visibly flips itself back on and the mode
+            // feels stuck oscillating. Suppress auto-arm for this host until the
+            // user navigates away.
+            autoArmSuppressedHost = SourceInspector.frontmostURL()?.host
+            if let host = autoArmSuppressedHost {
+                print("[Forage] auto-arm suppressed for \(host) until you leave")
+            }
+            disarm(announce: true)
+        } else {
+            autoArmSuppressedHost = nil   // an explicit arm clears any suppression
+            arm(automatically: false)
+        }
     }
 
     func arm(automatically: Bool) {
@@ -206,7 +224,14 @@ final class ForageMode {
         let host = SourceInspector.frontmostURL()?.host
         let matches = host.map { isAllowlisted($0) } ?? false
 
+        // Clear the suppression once the user is somewhere else, so auto-arm works
+        // normally the next time they come back.
+        if let suppressed = autoArmSuppressedHost, host != suppressed {
+            autoArmSuppressedHost = nil
+        }
+
         if matches && !isArmed {
+            guard host != autoArmSuppressedHost else { return }
             arm(automatically: true)
         } else if !matches && isArmed && armedAutomatically {
             // Left the site — stand down. This is the privacy guarantee: auto-arm
