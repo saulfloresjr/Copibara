@@ -165,6 +165,19 @@ echo "📎 Stapling notarization ticket to DMG..."
 xcrun stapler staple "${DMG_PATH}" 2>&1
 echo "   ✅ Stapled"
 
+# ── Step 7: Release-ready copy ────────────────────────────────
+# copibara.com's download button points at the latest-release permalink, which
+# resolves by ASSET FILENAME. GitHub names an asset after the file you upload —
+# `gh release upload file#name` sets the asset's *label*, not its name — so
+# uploading the versioned DMG silently 404s the site's download link.
+#
+# Emit a correctly-named copy here so publishing can't get it wrong. Copied
+# after stapling so it carries the notarization ticket.
+RELEASE_DMG="${SCRIPT_DIR}/dist/Copibara-Yapivo.dmg"
+PERMALINK="https://github.com/saulfloresjr/Copibara/releases/latest/download/Copibara-Yapivo.dmg"
+cp "${DMG_PATH}" "${RELEASE_DMG}"
+echo "   ✅ Release-ready copy: $(basename "${RELEASE_DMG}")"
+
 # ── Done ──────────────────────────────────────────────────────
 echo ""
 echo "============================================"
@@ -183,9 +196,8 @@ echo "   Verify notarization:"
 echo "   spctl --assess --type open --context context:primary-signature ${DMG_PATH}"
 echo "   xcrun stapler validate ${DMG_PATH}"
 echo ""
-echo "   Publish (the asset name MUST stay 'Copibara-Yapivo.dmg' and the release"
-echo "   MUST be --latest — copibara.com links to the latest-release permalink"
-echo "   https://github.com/saulfloresjr/Copibara/releases/latest/download/Copibara-Yapivo.dmg"
-echo "   so a renamed asset or a non-latest release silently breaks the download):"
-echo "   gh release create v${VERSION}-yapivo '${DMG_PATH}#Copibara-Yapivo.dmg' --latest --title '...' --notes '...'"
+echo "   Publish — upload RELEASE_DMG (already named correctly) with --latest:"
+echo "   gh release create v${VERSION}-yapivo '${RELEASE_DMG}' --latest --title '...' --notes '...'"
+echo "   Then confirm the site's link actually serves it:"
+echo "   curl -sL ${PERMALINK} -o /tmp/x.dmg -w '%{http_code} %{size_download}\\n'"
 echo "============================================"
