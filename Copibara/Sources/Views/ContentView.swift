@@ -427,10 +427,32 @@ struct ContentView: View {
 
     private var forage: ForageMode { ForageMode.shared }
 
-    /// Click toggles Forage mode; the chevron opens its settings.
+    /// Click toggles Forage mode; right-click opens its settings.
+    ///
+    /// A plain Button rather than a Menu: macOS renders menu labels with its own
+    /// control tinting, which overrode `foregroundStyle` and left the leaf grey even
+    /// while armed. The armed state has to be unmistakable, so the colour wins.
     private var forageButton: some View {
-        Menu {
-            Toggle("Auto-arm on these sites", isOn: Binding(
+        Button {
+            forage.toggle()
+        } label: {
+            Image(systemName: forage.isArmed ? "leaf.fill" : "leaf")
+                .font(.system(size: 13, weight: forage.isArmed ? .semibold : .regular))
+                .foregroundStyle(forage.isArmed ? Color.forageAccent : Color.appTextSecondary)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
+                        .fill(forage.isArmed ? Color.forageAccent.opacity(0.18) : Color.appSurface)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
+                        .stroke(forage.isArmed ? Color.forageAccent.opacity(0.55) : Color.clear,
+                                lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Toggle("Auto-arm on allowlisted sites", isOn: Binding(
                 get: { forage.autoArmEnabled },
                 set: { forage.autoArmEnabled = $0 }
             ))
@@ -443,28 +465,10 @@ struct ContentView: View {
                     ))
                 }
             }
-            Divider()
-            Text(forage.isArmed
-                 ? (forage.armedAutomatically ? "Armed automatically" : "Armed manually")
-                 : "Off — captures stay in Fast mode")
-        } label: {
-            Image(systemName: forage.isArmed ? "leaf.fill" : "leaf")
-                .font(.system(size: 13))
-                .foregroundStyle(forage.isArmed ? Color.forageAccent : Color.appTextSecondary)
-                .frame(width: 28, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.sm)
-                        .fill(forage.isArmed ? Color.forageAccent.opacity(0.16) : Color.appSurface)
-                )
-        } primaryAction: {
-            forage.toggle()
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .frame(width: 28, height: 28)
         .help(forage.isArmed
-              ? "Forage mode ON — captures go to Collected with their source (⌘⇧F)"
-              : "Forage mode OFF — turn on to collect finds with their source (⌘⇧F)")
+              ? "Forage mode ON — captures go to Collected with their source (\(Shortcuts.forageDisplay)). Right-click for settings."
+              : "Forage mode OFF — turn on to collect finds with their source (\(Shortcuts.forageDisplay)). Right-click for settings.")
     }
 
     private var header: some View {
@@ -574,6 +578,8 @@ struct ContentView: View {
                             .font(.system(size: 11, weight: .bold))
                         Text("Add")
                             .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .fixedSize()          // never let "Add" wrap to "Ad / d"
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, Spacing.md)
@@ -582,6 +588,7 @@ struct ContentView: View {
                     .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
                 }
                 .buttonStyle(.plain)
+                .fixedSize()
                 .help("Add Item")
 
                 // Quit
@@ -598,6 +605,10 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .help("Quit Copibara")
             }
+            // Adding the leaf left the action row fighting the search field for
+            // width, and the loser was the "Add" label. Pin the row to its intrinsic
+            // size so the search field absorbs any shortfall instead.
+            .fixedSize()
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.md)

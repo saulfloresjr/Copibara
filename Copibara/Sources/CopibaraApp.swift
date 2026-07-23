@@ -9,8 +9,6 @@ final class CopibaraServices: ObservableObject {
 
     let store = CopibaraStore()
     var monitor: CopibaraMonitor?
-    var hotkeyService: HotkeyService?
-    var forageHotkeyService: HotkeyService?
     var tildeService: TildeScreenshotService?
     var floatingPanel: FloatingPanel?
 
@@ -36,21 +34,22 @@ final class CopibaraServices: ObservableObject {
         m.start()
         monitor = m
 
-        // 3. Global hotkey (⌘⇧V)
-        let hotkey = HotkeyService(handler: togglePicker)
-        hotkey.register()
-        hotkeyService = hotkey
-
-        // 4. Forage mode toggle (⌘⇧F) + auto-arm watcher
-        let forageHotkey = HotkeyService(
-            keycode: UInt32(kVK_ANSI_F),
+        // 3. Global hotkey (⌘⇧V) — open the clip picker
+        HotkeyCenter.shared.register(
+            .picker,
+            keycode: UInt32(kVK_ANSI_V),
             modifiers: UInt32(cmdKey | shiftKey),
-            id: 2
+            handler: togglePicker
+        )
+
+        // 4. Forage mode toggle + auto-arm watcher
+        HotkeyCenter.shared.register(
+            .forage,
+            keycode: Shortcuts.forageKeyCode,
+            modifiers: Shortcuts.forageModifiers
         ) {
             MainActor.assumeIsolated { ForageMode.shared.toggle() }
         }
-        forageHotkey.register()
-        forageHotkeyService = forageHotkey
         MainActor.assumeIsolated { ForageMode.shared.startWatching() }
 
         // 5. Tilde long-press screenshot

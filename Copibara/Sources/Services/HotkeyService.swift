@@ -1,48 +1,85 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// Registers a global hotkey that works even when the app is in the background.
+/// Global hotkeys that work even when the app is in the background.
 ///
-/// Defaults to ⌘⇧V (the clip picker); pass a keycode/modifiers/id for others.
-final class HotkeyService {
+/// One Carbon handler dispatches every hotkey by ID. The earlier design installed a
+/// separate handler per hotkey, which only worked as long as each handler correctly
+/// declined events that weren't its own and Carbon walked the whole chain — two
+/// assumptions that are easy to get subtly wrong and hard to observe when they fail.
+/// A single handler with a dictionary has neither problem.
+final class HotkeyCenter {
 
-    private var eventHotKey: EventHotKeyRef?
-    private let handler: () -> Void
-    private let keycode: UInt32
-    private let modifiers: UInt32
-    private let hotKeyID: UInt32
+    static let shared = HotkeyCenter()
 
-    init(
-        keycode: UInt32 = UInt32(kVK_ANSI_V),
-        modifiers: UInt32 = UInt32(cmdKey | shiftKey),
-        id: UInt32 = 1,
-        handler: @escaping () -> Void
-    ) {
-        self.keycode = keycode
-        self.modifiers = modifiers
-        self.hotKeyID = id
-        self.handler = handler
+    /// Stable IDs so registrations can be reasoned about and replaced.
+    enum ID: UInt32 {
+        case picker = 1
+        case forage = 2
     }
 
-    func register() {
-        let hotKeyID = EventHotKeyID(signature: fourCharCode("CBPK"), id: self.hotKeyID)
+    private var handlers: [UInt32: () -> Void] = [:]
+    private var refs: [UInt32: EventHotKeyRef] = [:]
+    private var handlerInstalled = false
+
+    private init() {}
+
+    /// Register a global hotkey. Returns false if the system refused it — usually
+    /// because another app already owns that combination.
+    @discardableResult
+    func register(
+        _ id: ID,
+        keycode: UInt32,
+        modifiers: UInt32,
+        handler: @escaping () -> Void
+    ) -> Bool {
+        installHandlerIfNeeded()
+        unregister(id)
+
+        var ref: EventHotKeyRef?
+        let hotKeyID = EventHotKeyID(signature: fourCharCode("CBPK"), id: id.rawValue)
+        let status = RegisterEventHotKey(
+            keycode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref
+        )
+
+        guard status == noErr, let ref else {
+            print("[Hotkey] ❌ \(id) failed to register (OSStatus \(status))")
+            return false
+        }
+        refs[id.rawValue] = ref
+        handlers[id.rawValue] = handler
+        print("[Hotkey] ✅ \(id) registered")
+        return true
+    }
+
+    func unregister(_ id: ID) {
+        if let ref = refs[id.rawValue] {
+            UnregisterEventHotKey(ref)
+            refs[id.rawValue] = nil
+        }
+        handlers[id.rawValue] = nil
+    }
+
+    fileprivate func fire(_ rawID: UInt32) {
+        guard let handler = handlers[rawID] else { return }
+        DispatchQueue.main.async(execute: handler)
+    }
+
+    private func installHandlerIfNeeded() {
+        guard !handlerInstalled else { return }
+        handlerInstalled = true
 
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
         )
 
-        let handlerRef = Unmanaged.passRetained(self).toOpaque()
-
         InstallEventHandler(
             GetApplicationEventTarget(),
             { (_, event, userData) -> OSStatus in
                 guard let userData, let event else { return OSStatus(eventNotHandledErr) }
-                let service = Unmanaged<HotkeyService>.fromOpaque(userData).takeUnretainedValue()
+                let center = Unmanaged<HotkeyCenter>.fromOpaque(userData).takeUnretainedValue()
 
-                // Every installed handler receives every hotkey press, so each one
-                // must confirm the event is its own. Without this check, registering
-                // a second hotkey makes both actions fire on either keystroke.
                 var firedID = EventHotKeyID()
                 let status = GetEventParameter(
                     event,
@@ -53,40 +90,16 @@ final class HotkeyService {
                     nil,
                     &firedID
                 )
-                guard status == noErr, firedID.id == service.hotKeyID else {
-                    return OSStatus(eventNotHandledErr)
-                }
+                guard status == noErr else { return OSStatus(eventNotHandledErr) }
 
-                DispatchQueue.main.async {
-                    service.handler()
-                }
+                center.fire(firedID.id)
                 return noErr
             },
             1,
             &eventType,
-            handlerRef,
+            Unmanaged.passUnretained(self).toOpaque(),
             nil
         )
-
-        RegisterEventHotKey(
-            keycode,
-            modifiers,
-            hotKeyID,
-            GetApplicationEventTarget(),
-            0,
-            &eventHotKey
-        )
-    }
-
-    func unregister() {
-        if let hotKey = eventHotKey {
-            UnregisterEventHotKey(hotKey)
-            eventHotKey = nil
-        }
-    }
-
-    deinit {
-        unregister()
     }
 }
 
