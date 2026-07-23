@@ -123,6 +123,14 @@ final class TildeScreenshotService {
         keyDownTime = mach_absolute_time()
         clipboardChangeCount = NSPasteboard.general.changeCount
 
+        // Snapshot the source *now*, while the page you're looking at is still
+        // frontmost — once the crosshair takes over, that context is gone. Deferred
+        // to the next main-loop tick so the AX reads never sit on the keystroke path
+        // and can't jeopardise the 50ms tap threshold. No-ops unless Forage is armed.
+        DispatchQueue.main.async {
+            ForageMode.shared.latchContext()
+        }
+
         // Schedule crosshair after tap threshold — cancelled if released early
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, self.keyIsDown, !self.crosshairLaunched else { return }
@@ -148,6 +156,8 @@ final class TildeScreenshotService {
             // ── QUICK TAP — crosshair never appeared ──
             crosshairWorkItem?.cancel()
             crosshairWorkItem = nil
+            // No capture is coming, so drop the context we latched on key-down.
+            DispatchQueue.main.async { ForageMode.shared.clearLatch() }
             reinjectBacktick()
             print("⌨️ Tilde: tap (\(Int(elapsed * 1000))ms) → backtick")
             return nil

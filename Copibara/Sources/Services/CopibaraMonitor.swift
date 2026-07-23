@@ -19,7 +19,9 @@ final class CopibaraMonitor {
         // whatever is on the clipboard right now.
         lastChangeCount = NSPasteboard.general.changeCount
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.checkForChanges()
+            // The timer already fires on the main run loop; assert that for the
+            // compiler so we can touch main-actor state (Forage mode) directly.
+            MainActor.assumeIsolated { self?.checkForChanges() }
         }
     }
 
@@ -28,6 +30,7 @@ final class CopibaraMonitor {
         timer = nil
     }
 
+    @MainActor
     private func checkForChanges() {
         let pasteboard = NSPasteboard.general
         let currentCount = pasteboard.changeCount
@@ -61,6 +64,14 @@ final class CopibaraMonitor {
             if let latest = store?.items.first,
                latest.type == .image,
                latest.size == pngData.count {
+                return
+            }
+
+            // Forage mode: file it as a collected find with its source attached.
+            if ForageMode.shared.isArmed, !ForageMode.shared.isSensitiveContext() {
+                let context = ForageMode.shared.consumeLatchedContext()
+                ForageMode.shared.noteActivity()
+                store?.addForagedImage(imageData: pngData, context: context)
                 return
             }
 
@@ -100,6 +111,11 @@ final class CopibaraMonitor {
                 store.save()
             }
             store?.addItem(content: content, type: .text, boardId: "yapivo")
+        } else if ForageMode.shared.isArmed, !ForageMode.shared.isSensitiveContext() {
+            // Forage mode: a quote is content material too. Read the source right now —
+            // no crosshair has taken focus, so the page is still frontmost.
+            ForageMode.shared.noteActivity()
+            store?.addForagedText(content: content, context: SourceInspector.snapshot())
         } else {
             // Add to the default board immediately so there's no noticeable lag
             let addedItem = store?.addItem(content: content)

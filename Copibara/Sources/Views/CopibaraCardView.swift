@@ -129,6 +129,13 @@ struct CopibaraCardView: View {
 
             Spacer(minLength: Spacing.sm)
 
+            // Source chip — where this find came from (Forage mode only)
+            if let capture = item.capture, capture.hasSource {
+                sourceChip(capture)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, Spacing.sm)
+            }
+
             // Footer
             HStack {
                 Text(item.createdAt.timeAgoDisplay())
@@ -190,6 +197,46 @@ struct CopibaraCardView: View {
             Divider()
             Button("Delete", role: .destructive) { onDelete() }
         }
+    }
+
+    /// Where a foraged clip came from, plus how well it did if we could read a count.
+    /// Clicking opens the original page — the point of saving the source is being able
+    /// to go back and credit it.
+    @ViewBuilder
+    private func sourceChip(_ capture: CaptureContext) -> some View {
+        HStack(spacing: 4) {
+            Text(capture.kind?.glyph ?? "🌐")
+                .font(.system(size: 9))
+
+            Text(capture.displaySource ?? "")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color.forageAccent)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            if let proof = capture.socialProof {
+                Text("↑\(proof)")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color.appTextTertiary)
+            }
+
+            Spacer(minLength: 0)
+
+            if capture.url != nil {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.appTextTertiary)
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Color.forageAccent.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if let url = capture.url { NSWorkspace.shared.open(url) }
+        }
+        .help(capture.url?.absoluteString ?? capture.windowTitle ?? "")
     }
 
     /// Load the image from ~/Library/Application Support/CopibaraManager/images/

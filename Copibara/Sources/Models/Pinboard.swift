@@ -19,4 +19,12 @@ struct Pinboard: Identifiable, Codable, Equatable {
         icon: "🎙",
         isDefault: true
     )
+
+    /// Where Forage mode files everything it collects.
+    static let collected = Pinboard(
+        id: "collected",
+        name: "Collected",
+        icon: "🌿",
+        isDefault: true
+    )
 }

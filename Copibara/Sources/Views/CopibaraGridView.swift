@@ -31,10 +31,7 @@ struct CopibaraGridView: View {
             : store.items.filter { $0.boardId == board }
         if !searchText.isEmpty {
             let query = searchText.lowercased()
-            result = result.filter {
-                $0.content.lowercased().contains(query) ||
-                $0.type.label.lowercased().contains(query)
-            }
+            result = result.filter { $0.matches(query) }
         }
         if let typeFilter = activeTypeFilter {
             result = result.filter { $0.type == typeFilter }

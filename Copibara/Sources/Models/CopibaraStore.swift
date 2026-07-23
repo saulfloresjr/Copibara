@@ -67,6 +67,10 @@ final class CopibaraStore {
         if !pinboards.contains(where: { $0.id == "yapivo" }) {
             pinboards.append(.yapivo)
         }
+        // Migration: Forage mode's Collected board
+        if !pinboards.contains(where: { $0.id == "collected" }) {
+            pinboards.append(.collected)
+        }
 
         // Save on app quit to make sure nothing is lost
         NotificationCenter.default.addObserver(
@@ -89,17 +93,20 @@ final class CopibaraStore {
 
     // MARK: - Items
 
+    /// Boards that only their own capture path may write to.
+    private static let reservedBoardIds: Set<String> = ["yapivo", "collected"]
+
     /// The default board ID for new non-voice items.
-    /// RULE: Never returns "yapivo" — only voice transcriptions go there.
-    /// If no non-Yapivo board exists, auto-creates the default Copibara board.
+    /// RULE: Never returns "yapivo" (voice only) or "collected" (Forage mode only).
+    /// If no ordinary board exists, auto-creates the default Copibara board.
     var defaultBoardId: String {
-        // If the user is viewing a specific non-Yapivo board, use it
-        if activeBoard != "all" && activeBoard != "yapivo",
+        // If the user is viewing a specific ordinary board, use it
+        if activeBoard != "all", !Self.reservedBoardIds.contains(activeBoard),
            pinboards.contains(where: { $0.id == activeBoard }) {
             return activeBoard
         }
-        // Fall back to first non-Yapivo board
-        if let board = pinboards.first(where: { $0.id != "yapivo" }) {
+        // Fall back to first ordinary board
+        if let board = pinboards.first(where: { !Self.reservedBoardIds.contains($0.id) }) {
             return board.id
         }
         // No non-Yapivo board exists — auto-create the default Copibara board
@@ -128,7 +135,12 @@ final class CopibaraStore {
 
     /// Add an image item (e.g. from a screenshot).
     @discardableResult
-    func addImageItem(imageData: Data, boardId: String? = nil) -> CopibaraItem {
+    func addImageItem(
+        imageData: Data,
+        boardId: String? = nil,
+        capture: CaptureContext? = nil,
+        pinned: Bool = false
+    ) -> CopibaraItem {
         // Save image to disk
         let fileName = "screenshot_\(nextId)_\(Int(Date().timeIntervalSince1970)).png"
         let fileURL = imagesDir.appendingPathComponent(fileName)
@@ -145,12 +157,114 @@ final class CopibaraStore {
             createdAt: Date(),
             boardId: boardId ?? defaultBoardId,
             size: imageData.count,
-            imageFileName: fileName
+            imageFileName: fileName,
+            capture: capture,
+            pinned: pinned ? true : nil
         )
         nextId += 1
         items.insert(item, at: 0)
         save()
         return item
+    }
+
+    // MARK: - Forage
+
+    /// File a capture made while Forage mode was armed: it lands on the Collected
+    /// board, is pinned against bulk clears, and gets an async OCR pass that both
+    /// makes it searchable and backfills the source if no URL was available.
+    func addForagedImage(imageData: Data, context: CaptureContext?) {
+        // Safety: recreate the Collected board if it was deleted.
+        if !pinboards.contains(where: { $0.id == "collected" }) {
+            pinboards.append(.collected)
+        }
+
+        let item = addImageItem(
+            imageData: imageData,
+            boardId: Pinboard.collected.id,
+            capture: context ?? CaptureContext(),
+            pinned: true
+        )
+
+        // Immediate feedback from whatever the URL already told us.
+        let headline = context?.displaySource.map { "Collected from \($0)" } ?? "Collected"
+        Task { @MainActor in
+            ForageHUD.shared.show(icon: "🌿", title: headline, subtitle: "saved to Collected")
+        }
+
+        let id = item.id
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let text = TextRecognizer.recognize(in: imageData) else { return }
+            DispatchQueue.main.async {
+                self?.attachRecognizedText(text, to: id)
+            }
+        }
+    }
+
+    /// File a text clip collected while Forage mode was armed. No OCR needed — and
+    /// unlike a screenshot there's no crosshair stealing focus, so the source can be
+    /// read at copy time rather than latched in advance.
+    func addForagedText(content: String, context: CaptureContext?) {
+        if !pinboards.contains(where: { $0.id == "collected" }) {
+            pinboards.append(.collected)
+        }
+
+        // If the URL didn't identify a source, the copied text itself might.
+        var resolved = context ?? CaptureContext()
+        if resolved.handle == nil {
+            let found = SourceParser.handle(inText: content)
+            resolved.handle = found.handle
+            if let kind = found.kind { resolved.kind = kind }
+        }
+
+        let type = detectContentType(content)
+        let item = CopibaraItem(
+            id: nextId,
+            content: content,
+            type: type,
+            preview: generatePreview(content, type: type),
+            createdAt: Date(),
+            boardId: Pinboard.collected.id,
+            size: content.utf8.count,
+            capture: resolved,
+            pinned: true
+        )
+        nextId += 1
+        items.insert(item, at: 0)
+        save()
+
+        let headline = resolved.displaySource.map { "Collected from \($0)" } ?? "Collected"
+        Task { @MainActor in
+            ForageHUD.shared.show(icon: "🌿", title: headline, subtitle: "text saved to Collected")
+        }
+    }
+
+    /// Fold OCR results into a foraged item — searchable text, plus a source and
+    /// engagement count if we can spot them in the pixels.
+    private func attachRecognizedText(_ text: String, to id: Int) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        var context = items[index].capture ?? CaptureContext()
+        context.ocrText = text
+
+        // Fallback source: "r/homestead" is usually right there in the screenshot,
+        // even when the URL was unavailable.
+        if context.handle == nil {
+            let found = SourceParser.handle(inText: text)
+            if let handle = found.handle {
+                context.handle = handle
+                if context.kind == nil || context.kind == .app || context.kind == .web {
+                    context.kind = found.kind ?? context.kind
+                }
+                Task { @MainActor in
+                    ForageHUD.shared.show(icon: "🌿", title: "Collected from \(handle)", subtitle: "saved to Collected")
+                }
+            }
+        }
+        if context.socialProof == nil {
+            context.socialProof = SourceParser.socialProof(inText: text)
+        }
+
+        items[index].capture = context
+        save()
     }
 
     /// Export the image to a user-selected location
@@ -275,17 +389,25 @@ final class CopibaraStore {
         save()
     }
 
-    /// Nuclear option: clear every item across all boards.
+    /// Nuclear option: clear every item across all boards — except pinned finds.
+    ///
+    /// Foraged items survive this deliberately. The whole point of collecting is that
+    /// the good stuff outlives routine clipboard churn; a cleanup you run monthly
+    /// shouldn't take out the content bank you've been building. To remove them,
+    /// clear the Collected board directly or delete them individually.
     func clearAllBoards() {
-        for item in items {
+        for item in items where !item.isPinned {
             if let fileName = item.imageFileName {
                 let fileURL = imagesDir.appendingPathComponent(fileName)
                 try? FileManager.default.removeItem(at: fileURL)
             }
         }
-        items.removeAll()
+        items.removeAll { !$0.isPinned }
         save()
     }
+
+    /// How many pinned items "Clear Everything" would leave behind.
+    var pinnedCount: Int { items.filter(\.isPinned).count }
 
     /// Copy item content to the system clipboard. Handles both text and image items.
     func copyToClipboard(id: Int) {
@@ -379,10 +501,7 @@ final class CopibaraStore {
             : items.filter { $0.boardId == activeBoard }
         if !search.isEmpty {
             let query = search.lowercased()
-            result = result.filter {
-                $0.content.lowercased().contains(query) ||
-                $0.type.label.lowercased().contains(query)
-            }
+            result = result.filter { $0.matches(query) }
         }
         return result
     }

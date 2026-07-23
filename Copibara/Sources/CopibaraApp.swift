@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Carbon.HIToolbox
 
 /// Shared services that persist independently of SwiftUI view lifecycle.
 /// Initialized once at app launch, not when the MenuBarExtra panel opens.
@@ -9,6 +10,7 @@ final class CopibaraServices: ObservableObject {
     let store = CopibaraStore()
     var monitor: CopibaraMonitor?
     var hotkeyService: HotkeyService?
+    var forageHotkeyService: HotkeyService?
     var tildeService: TildeScreenshotService?
     var floatingPanel: FloatingPanel?
 
@@ -39,12 +41,24 @@ final class CopibaraServices: ObservableObject {
         hotkey.register()
         hotkeyService = hotkey
 
-        // 4. Tilde long-press screenshot
+        // 4. Forage mode toggle (⌘⇧F) + auto-arm watcher
+        let forageHotkey = HotkeyService(
+            keycode: UInt32(kVK_ANSI_F),
+            modifiers: UInt32(cmdKey | shiftKey),
+            id: 2
+        ) {
+            MainActor.assumeIsolated { ForageMode.shared.toggle() }
+        }
+        forageHotkey.register()
+        forageHotkeyService = forageHotkey
+        MainActor.assumeIsolated { ForageMode.shared.startWatching() }
+
+        // 5. Tilde long-press screenshot
         let tilde = TildeScreenshotService()
         tilde.start()
         tildeService = tilde
 
-        // 5. Track previously-active app for paste-back
+        // 6. Track previously-active app for paste-back
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
@@ -80,10 +94,50 @@ struct CopibaraApp: App {
                 pasteItem(item)
             })
         } label: {
-            Image(nsImage: CopibaraApp.menuBarIcon)
+            MenuBarLabel(forage: ForageMode.shared)
         }
         .menuBarExtraStyle(.window)
     }
+
+    /// The menu bar icon, which doubles as the Forage-mode indicator.
+    ///
+    /// Reading `forage.isArmed` inside a view body is what makes the icon swap live —
+    /// Observation tracks the access and re-renders the label when it flips.
+    private struct MenuBarLabel: View {
+        var forage: ForageMode
+
+        var body: some View {
+            Image(nsImage: forage.isArmed ? CopibaraApp.menuBarIconArmed : CopibaraApp.menuBarIcon)
+        }
+    }
+
+    /// Armed variant: the same capybara, tinted green with a filled dot.
+    ///
+    /// Deliberately *not* a template image — template icons get force-tinted to match
+    /// the menu bar, which is exactly what we don't want here. Colour is the whole
+    /// point: armed has to be unmistakable at a glance, in both light and dark bars.
+    static let menuBarIconArmed: NSImage = {
+        let base = CopibaraApp.menuBarIcon
+        let size = NSSize(width: 22, height: 20)
+        let image = NSImage(size: size)
+        let accent = NSColor(calibratedRed: 0.29, green: 0.71, blue: 0.36, alpha: 1.0)  // forage green
+
+        image.lockFocus()
+        // Tint the silhouette by masking the accent colour through it.
+        let iconRect = NSRect(x: 0, y: 0, width: 20, height: 20)
+        base.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+        accent.set()
+        iconRect.fill(using: .sourceAtop)
+
+        // Status dot, top-right.
+        let dot = NSBezierPath(ovalIn: NSRect(x: 16, y: 13, width: 6, height: 6))
+        accent.setFill()
+        dot.fill()
+        image.unlockFocus()
+
+        image.isTemplate = false
+        return image
+    }()
 
     /// Menu bar icon — a capybara hugging a clipboard, from the brand asset
     /// `assets/brand/taskbar-icon-1.png` processed into a monochrome template PNG (white

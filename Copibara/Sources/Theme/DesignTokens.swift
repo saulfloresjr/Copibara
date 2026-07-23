@@ -27,6 +27,11 @@ extension Color {
     static let appBorder = Color(light: Color(red: 229/255, green: 229/255, blue: 234/255),
                                  dark: Color(red: 58/255, green: 58/255, blue: 60/255))
 
+    // Forage mode — green, distinct from every content-type colour so an armed
+    // state never reads as "this clip is code".
+    static let forageAccent = Color(light: Color(red: 46/255, green: 155/255, blue: 78/255),
+                                    dark: Color(red: 88/255, green: 200/255, blue: 120/255))
+
     // Content Type Colors
     static let typeText = Color(red: 0/255, green: 136/255, blue: 255/255)
     static let typeLink = Color(red: 88/255, green: 86/255, blue: 214/255)

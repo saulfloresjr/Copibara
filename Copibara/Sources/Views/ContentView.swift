@@ -238,10 +238,17 @@ struct ContentView: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Color.appTextPrimary)
 
-                    Text("This will permanently delete all \(store.items.count) items across every board. This cannot be undone.")
+                    Text("This will permanently delete \(store.items.count - store.pinnedCount) items across every board. This cannot be undone.")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.appTextSecondary)
                         .multilineTextAlignment(.center)
+
+                    if store.pinnedCount > 0 {
+                        Text("🌿 \(store.pinnedCount) collected \(store.pinnedCount == 1 ? "find" : "finds") will be kept — clear the Collected board directly to remove those.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.forageAccent)
+                            .multilineTextAlignment(.center)
+                    }
 
                     HStack(spacing: Spacing.sm) {
                         Button("Cancel") {
@@ -416,6 +423,50 @@ struct ContentView: View {
         )
     }
 
+    // MARK: - Forage Toggle
+
+    private var forage: ForageMode { ForageMode.shared }
+
+    /// Click toggles Forage mode; the chevron opens its settings.
+    private var forageButton: some View {
+        Menu {
+            Toggle("Auto-arm on these sites", isOn: Binding(
+                get: { forage.autoArmEnabled },
+                set: { forage.autoArmEnabled = $0 }
+            ))
+            Divider()
+            Section("Auto-arm sites") {
+                ForEach(ForageMode.knownSites, id: \.self) { site in
+                    Toggle(site, isOn: Binding(
+                        get: { forage.allowlist.contains(site) },
+                        set: { _ in forage.toggleSite(site) }
+                    ))
+                }
+            }
+            Divider()
+            Text(forage.isArmed
+                 ? (forage.armedAutomatically ? "Armed automatically" : "Armed manually")
+                 : "Off — captures stay in Fast mode")
+        } label: {
+            Image(systemName: forage.isArmed ? "leaf.fill" : "leaf")
+                .font(.system(size: 13))
+                .foregroundStyle(forage.isArmed ? Color.forageAccent : Color.appTextSecondary)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
+                        .fill(forage.isArmed ? Color.forageAccent.opacity(0.16) : Color.appSurface)
+                )
+        } primaryAction: {
+            forage.toggle()
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .frame(width: 28, height: 28)
+        .help(forage.isArmed
+              ? "Forage mode ON — captures go to Collected with their source (⌘⇧F)"
+              : "Forage mode OFF — turn on to collect finds with their source (⌘⇧F)")
+    }
+
     private var header: some View {
         HStack(spacing: Spacing.base) {
             // Logo
@@ -499,6 +550,8 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .help("Clear All")
                 }
+
+                forageButton
 
                 Button {
                     grabElement()

@@ -41,8 +41,38 @@ struct CopibaraItem: Identifiable, Codable, Equatable {
     /// For image items: relative filename of the stored image in the images directory.
     var imageFileName: String?
 
+    /// Where this clip came from, captured automatically in Forage mode.
+    /// Nil for everything captured in Fast mode — which is the default.
+    var capture: CaptureContext?
+
+    /// Foraged finds are pinned: "Clear Everything" skips them, so a routine
+    /// cleanup can't wipe the things you deliberately collected.
+    ///
+    /// Optional, not `Bool = false`, on purpose: Swift's synthesized decoder ignores
+    /// property defaults and *throws* on a missing key. A non-optional here would make
+    /// every pre-existing data.json fail to decode — which the store treats as "no
+    /// data" and reseeds, silently destroying the user's clipboard history.
+    var pinned: Bool?
+
+    /// Convenience for the optional above.
+    var isPinned: Bool { pinned == true }
+
     static func == (lhs: CopibaraItem, rhs: CopibaraItem) -> Bool {
         lhs.id == rhs.id
+    }
+
+    /// Search match. Foraged items also match on their source and on any text OCR'd
+    /// out of the image — which is what makes screenshots findable at all.
+    func matches(_ lowercasedQuery: String) -> Bool {
+        if content.lowercased().contains(lowercasedQuery) { return true }
+        if type.label.lowercased().contains(lowercasedQuery) { return true }
+        guard let capture else { return false }
+        if capture.handle?.lowercased().contains(lowercasedQuery) == true { return true }
+        if capture.host?.lowercased().contains(lowercasedQuery) == true { return true }
+        if capture.appName?.lowercased().contains(lowercasedQuery) == true { return true }
+        if capture.windowTitle?.lowercased().contains(lowercasedQuery) == true { return true }
+        if capture.ocrText?.lowercased().contains(lowercasedQuery) == true { return true }
+        return false
     }
 }
 
