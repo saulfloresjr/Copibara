@@ -7,7 +7,8 @@ its own license, reproduced in full below.
 
 ## waifu2x Core ML model
 
-**File:** `Copibara/Sources/Resources/waifu2x-anime.mlmodel`
+**File:** `Copibara/Sources/Resources/waifu2x-anime-scale2x.mlmodel`
+**Upstream name:** `up_anime_scale2x_model.mlmodel`
 **Used by:** `Copibara/Sources/Services/AIUpscaler.swift` (AI upscaling of small screenshots)
 **Source:** https://github.com/imxieyi/waifu2x-mac
 **Copyright:** © 2018 Yi Xie

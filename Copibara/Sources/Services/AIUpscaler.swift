@@ -30,6 +30,14 @@ enum UpscaleMode {
 /// photographs. That's the intended trade: large photo captures already have enough
 /// pixels to work with.
 ///
+/// Specifically the *scale2x* variant, with no denoising. waifu2x also ships
+/// noise0–noise3 models that denoise while they upscale, and we shipped noise1 at
+/// first — but screenshots are lossless PNGs with no noise to remove, so that
+/// denoising had nothing to do except smooth away real edges. Side by side on a
+/// menu bar icon, scale2x keeps eyes and lettering distinct where noise1 mushes
+/// them together. If a source ever *is* compressed (a re-shared JPEG), the noise
+/// variants would suit it better.
+///
 /// waifu2x model © 2018 Yi Xie (MIT) — github.com/imxieyi/waifu2x-mac.
 /// See THIRD_PARTY_LICENSES.md.
 enum AIUpscaler {
@@ -108,7 +116,7 @@ enum AIUpscaler {
     // MARK: - One tiled 2× pass
 
     private static let model: MLModel? = {
-        guard let url = Bundle.module.url(forResource: "waifu2x-anime", withExtension: "mlmodel"),
+        guard let url = Bundle.module.url(forResource: "waifu2x-anime-scale2x", withExtension: "mlmodel"),
               let compiled = try? MLModel.compileModel(at: url) else {
             print("[AIUpscaler] model not found in bundle")
             return nil
