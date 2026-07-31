@@ -557,6 +557,21 @@ struct ContentView: View {
 
                 forageButton
 
+                // Window capture — the same flow Yapivo triggers by voice, available
+                // by hand so it's testable without the URL scheme / voice path.
+                Button {
+                    WindowCapturePicker.shared.capture(status: { store.toast = $0 })
+                } label: {
+                    Image(systemName: "macwindow.on.rectangle")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.appTextSecondary)
+                        .frame(width: 28, height: 28)
+                        .background(Color.appSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+                }
+                .buttonStyle(.plain)
+                .help("Screenshot a window — pick by number (voice-drivable via Yapivo)")
+
                 Button {
                     grabElement()
                 } label: {

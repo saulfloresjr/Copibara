@@ -47,6 +47,9 @@ final class CopibaraServices: ObservableObject {
         //    so editors keep their Find-in-Files. See Shortcuts.ownsForageChord().
         MainActor.assumeIsolated { ForageMode.shared.startWatching() }
 
+        // 4b. copibara:// URL scheme — Yapivo's channel for hands-free window capture.
+        URLSchemeHandler.shared.register()
+
         // 5. Tilde long-press screenshot
         let tilde = TildeScreenshotService()
         tilde.start()

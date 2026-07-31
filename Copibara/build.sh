@@ -106,6 +106,17 @@ cat > "${APP_DIR}/Contents/Info.plist" << PLIST
     <true/>
     <key>NSSupportsAutomaticTermination</key>
     <false/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>${BUNDLE_ID}</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>copibara</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST
