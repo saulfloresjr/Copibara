@@ -34,7 +34,7 @@ fi
 # ── Configuration ─────────────────────────────────────────────
 APP_NAME="Copibara"
 BUNDLE_ID="com.copibara.app"
-VERSION="1.4.2"
+VERSION="1.5.0"
 BUILD_DIR="${SCRIPT_DIR}/.build/release"
 APP_DIR="${SCRIPT_DIR}/dist/${APP_NAME}.app"
 DMG_PATH="${SCRIPT_DIR}/dist/Copibara-Yapivo-v${VERSION}.dmg"
