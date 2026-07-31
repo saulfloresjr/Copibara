@@ -25,8 +25,10 @@ final class WindowCapturePicker {
         let title: String
     }
 
-    /// Cap so numbers stay single-digit and the grid stays readable.
-    private static let maxWindows = 9
+    /// Most windows to show at once. Single digits (≤9) are the sweet spot for both
+    /// voice ("say three") and keyboard, but we allow more so nothing important is
+    /// hidden — voice still handles "eleven", and you can always click.
+    private static let maxWindows = 12
 
     private var overlay: NSWindow?
     private var candidates: [Candidate] = []
@@ -95,13 +97,22 @@ final class WindowCapturePicker {
             true, onScreenWindowsOnly: true)
         let ownPID = NSRunningApplication.current.processIdentifier
 
+        // Real, user-facing apps only — those that show in the Dock (activationPolicy
+        // .regular). This keeps out menu-bar agents and helper panels far more
+        // reliably than a title check did, and it does it WITHOUT requiring a title,
+        // so windows that report an empty one (Ekkovia, Finder, etc.) now show up.
+        let regularPIDs = Set(
+            NSWorkspace.shared.runningApplications
+                .filter { $0.activationPolicy == .regular }
+                .map { $0.processIdentifier })
+
         let windows = content.windows
             .filter { w in
                 w.isOnScreen &&
                 w.windowLayer == 0 &&                       // normal windows, not menu bar / dock
                 w.frame.width >= 120 && w.frame.height >= 80 &&
                 w.owningApplication?.processID != ownPID && // never our own overlay/panel
-                !(w.title ?? "").isEmpty
+                regularPIDs.contains(w.owningApplication?.processID ?? -1)
             }
             .sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }
             .prefix(maxWindows)
