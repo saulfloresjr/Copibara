@@ -18,11 +18,19 @@ final class CopibaraMonitor {
         // Sync to current clipboard state so we don't re-capture
         // whatever is on the clipboard right now.
         lastChangeCount = NSPasteboard.general.changeCount
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            // The timer already fires on the main run loop; assert that for the
-            // compiler so we can touch main-actor state (Forage mode) directly.
+
+        // Register in `.common` modes, NOT via scheduledTimer (which uses `.default`
+        // only). While the menu bar window is open and being interacted with —
+        // hovering, scrolling, clicking — the run loop is in a tracking mode, and a
+        // `.default`-mode timer is starved: the clipboard poll silently stops, so a
+        // screenshot taken with the panel open wouldn't appear until the panel closed
+        // and the loop returned to `.default`. `.common` keeps it polling throughout.
+        let t = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            // Fires on the main run loop; assert it so we can touch main-actor state.
             MainActor.assumeIsolated { self?.checkForChanges() }
         }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     func stop() {
