@@ -160,7 +160,10 @@ final class WindowCapturePicker {
     private func present(_ cands: [Candidate]) {
         let screen = NSScreen.main ?? NSScreen.screens.first!
         let frame = screen.frame
-        let win = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        // KeyableWindow, not a plain NSWindow: a .borderless window returns false from
+        // canBecomeKey by default, so it never becomes key and never receives keyDown —
+        // which is why Esc and the number keys did nothing while clicking still worked.
+        let win = KeyableWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
         win.level = .screenSaver
         win.isOpaque = false
         win.backgroundColor = .clear
@@ -176,6 +179,16 @@ final class WindowCapturePicker {
         win.makeFirstResponder(view)
         overlay = win
     }
+}
+
+// MARK: - Key-accepting borderless window
+
+/// A borderless window that can still become key, so its content view receives
+/// keyDown (Esc to cancel, 1–9 to pick). Plain NSWindow refuses key status when
+/// borderless.
+private final class KeyableWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 }
 
 // MARK: - Overlay view
