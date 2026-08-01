@@ -612,7 +612,8 @@ private struct PickerRow: View {
             .appendingPathComponent("CopibaraManager", isDirectory: true)
             .appendingPathComponent("images", isDirectory: true)
             .appendingPathComponent(fileName)
-        return NSImage(contentsOf: imagePath)
+        // Downscaled thumbnail — the picker row shows it at ~48pt.
+        return ImageThumbnail.load(imagePath, maxPixel: 160)
     }
 }
 

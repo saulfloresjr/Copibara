@@ -268,7 +268,8 @@ struct CopibaraCardView: View {
             .appendingPathComponent("CopibaraManager", isDirectory: true)
             .appendingPathComponent("images", isDirectory: true)
             .appendingPathComponent(fileName)
-        return NSImage(contentsOf: imagePath)
+        // Downscaled thumbnail, not the full image — the card shows it at ~80pt.
+        return ImageThumbnail.load(imagePath, maxPixel: 400)
     }
 }
 

@@ -159,6 +159,8 @@ extension DetailPanelView {
             .appendingPathComponent("CopibaraManager", isDirectory: true)
             .appendingPathComponent("images", isDirectory: true)
             .appendingPathComponent(fileName)
-        return NSImage(contentsOf: imagePath)
+        // Larger preview than the grid, but still capped so a huge capture doesn't
+        // decode full-res just for the detail pane.
+        return ImageThumbnail.load(imagePath, maxPixel: 1200)
     }
 }

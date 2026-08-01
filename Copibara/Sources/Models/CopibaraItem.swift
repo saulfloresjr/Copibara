@@ -63,16 +63,22 @@ struct CopibaraItem: Identifiable, Codable, Equatable {
 
     /// Search match. Foraged items also match on their source and on any text OCR'd
     /// out of the image — which is what makes screenshots findable at all.
-    func matches(_ lowercasedQuery: String) -> Bool {
-        if content.lowercased().contains(lowercasedQuery) { return true }
-        if type.label.lowercased().contains(lowercasedQuery) { return true }
+    ///
+    /// Uses `range(of:options:.caseInsensitive)`, NOT `content.lowercased().contains`:
+    /// the old form allocated a fresh lowercased copy of every item's content (some up
+    /// to 70k chars) on every keystroke × ~19k items — the search lag at scale. The
+    /// range form compares case-insensitively in place, no allocation, and bails at the
+    /// first hit. `query` is assumed already lowercased/trimmed by the caller.
+    func matches(_ query: String) -> Bool {
+        func has(_ haystack: String?) -> Bool {
+            guard let haystack, !haystack.isEmpty else { return false }
+            return haystack.range(of: query, options: .caseInsensitive) != nil
+        }
+        if has(content) { return true }
+        if has(type.label) { return true }
         guard let capture else { return false }
-        if capture.handle?.lowercased().contains(lowercasedQuery) == true { return true }
-        if capture.host?.lowercased().contains(lowercasedQuery) == true { return true }
-        if capture.appName?.lowercased().contains(lowercasedQuery) == true { return true }
-        if capture.windowTitle?.lowercased().contains(lowercasedQuery) == true { return true }
-        if capture.ocrText?.lowercased().contains(lowercasedQuery) == true { return true }
-        return false
+        return has(capture.handle) || has(capture.host) || has(capture.appName)
+            || has(capture.windowTitle) || has(capture.ocrText)
     }
 }
 
