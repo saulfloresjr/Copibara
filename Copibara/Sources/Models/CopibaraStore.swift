@@ -72,6 +72,14 @@ final class CopibaraStore {
             pinboards.append(.collected)
         }
 
+        // Enforce the history cap on the loaded set — this is where an existing
+        // oversized history (tens of thousands of clips) gets pruned down once, which
+        // shrinks both the in-memory items and the next startup decode. Pinned/foraged
+        // clips are untouched. Persist immediately so the trim survives a crash.
+        let before = items.count
+        trimIfNeeded()
+        if items.count != before { save() }
+
         // Save on app quit to make sure nothing is lost
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
@@ -115,6 +123,42 @@ final class CopibaraStore {
         return Pinboard.clipboard.id
     }
 
+    // MARK: - History cap
+
+    /// Keep at most this many UNPINNED items. Foraged/pinned clips are never trimmed —
+    /// the whole point of pinning is that they outlive routine churn. Bounds both
+    /// memory and the startup JSON decode as history grows. Configurable via defaults.
+    var maxUnpinnedHistory: Int {
+        let v = UserDefaults.standard.integer(forKey: "maxUnpinnedHistory")
+        return v > 0 ? v : 5000
+    }
+    /// Trim only once the overflow reaches this, then drop the batch — so the O(n)
+    /// pass runs about once every `trimSlack` adds instead of on every single copy.
+    private let trimSlack = 200
+
+    /// Drop the oldest unpinned items past the cap (items are newest-first), deleting
+    /// their image files too. Does NOT save — the caller persists.
+    private func trimIfNeeded() {
+        let cap = maxUnpinnedHistory
+        guard items.count > cap + trimSlack else { return }   // fast path: usually skipped
+        var keptUnpinned = 0
+        var removed: [CopibaraItem] = []
+        items.removeAll { item in
+            if item.isPinned { return false }                 // never trim pinned/foraged
+            if keptUnpinned < cap { keptUnpinned += 1; return false }
+            removed.append(item)
+            return true
+        }
+        for item in removed {
+            if let fileName = item.imageFileName {
+                try? FileManager.default.removeItem(at: imagesDir.appendingPathComponent(fileName))
+            }
+        }
+        if !removed.isEmpty {
+            print("[Copibara] history cap: trimmed \(removed.count) old unpinned item(s)")
+        }
+    }
+
     @discardableResult
     func addItem(content: String, type: ContentType? = nil, boardId: String? = nil) -> CopibaraItem {
         let detectedType = type ?? detectContentType(content)
@@ -129,6 +173,7 @@ final class CopibaraStore {
         )
         nextId += 1
         items.insert(item, at: 0)
+        trimIfNeeded()
         save()
         return item
     }
@@ -163,6 +208,7 @@ final class CopibaraStore {
         )
         nextId += 1
         items.insert(item, at: 0)
+        trimIfNeeded()
         save()
         return item
     }

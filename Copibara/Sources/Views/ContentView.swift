@@ -5,6 +5,10 @@ struct ContentView: View {
     var onPasteItem: ((CopibaraItem) -> Void)? = nil
 
     @State private var searchText = ""
+    /// The search actually applied to the list — updated ~150ms after typing stops so
+    /// each keystroke doesn't re-scan ~19k items. Cleared instantly when the field empties.
+    @State private var debouncedSearch = ""
+    @State private var searchDebounce: Task<Void, Never>?
     @State private var selectedItemIds: Set<Int> = []
     @State private var lastClickedId: Int?
     @State private var showNewBoardSheet = false
@@ -34,7 +38,7 @@ struct ContentView: View {
                 // Main Area
                 CopibaraGridView(
                     store: store,
-                    searchText: searchText,
+                    searchText: debouncedSearch,
                     selectedItemIds: $selectedItemIds,
                     lastClickedId: $lastClickedId,
                     activeTypeFilter: $activeTypeFilter,
@@ -298,6 +302,18 @@ struct ContentView: View {
                 if store.toast == newValue { store.toast = nil }
             }
         }
+        .onChange(of: searchText) { _, newValue in
+            // Debounce: apply the query ~150ms after typing stops so each keystroke
+            // doesn't re-scan the whole history. Emptying the field clears instantly.
+            searchDebounce?.cancel()
+            let query = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if query.isEmpty { debouncedSearch = ""; return }
+            searchDebounce = Task {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                guard !Task.isCancelled else { return }
+                debouncedSearch = query
+            }
+        }
         .onKeyPress(.return) {
             // Enter: paste the single selected item
             guard !isModalOpen else { return .ignored }
@@ -305,7 +321,7 @@ struct ContentView: View {
                   let id = selectedItemIds.first,
                   let item = store.item(for: id) else {
                 // If nothing selected, select+paste the first item
-                let items = store.filteredItems(search: searchText)
+                let items = store.filteredItems(search: debouncedSearch)
                 guard let first = items.first else { return .ignored }
                 onPasteItem?(first)
                 return .handled
@@ -316,7 +332,7 @@ struct ContentView: View {
         .onKeyPress(.downArrow) {
             // ↓ move selection to next item
             guard !isModalOpen else { return .ignored }
-            let items = store.filteredItems(search: searchText)
+            let items = store.filteredItems(search: debouncedSearch)
             guard !items.isEmpty else { return .ignored }
 
             if selectedItemIds.isEmpty {
@@ -342,7 +358,7 @@ struct ContentView: View {
         .onKeyPress(.upArrow) {
             // ↑ move selection to previous item
             guard !isModalOpen else { return .ignored }
-            let items = store.filteredItems(search: searchText)
+            let items = store.filteredItems(search: debouncedSearch)
             guard !items.isEmpty else { return .ignored }
 
             if selectedItemIds.isEmpty {
@@ -369,7 +385,7 @@ struct ContentView: View {
             // ⌘A: select all visible items
             if press.characters == "a" && NSEvent.modifierFlags.contains(.command) {
                 guard !isModalOpen else { return .ignored }
-                let visibleItems = store.filteredItems(search: searchText)
+                let visibleItems = store.filteredItems(search: debouncedSearch)
                 withAnimation(.easeInOut(duration: 0.15)) {
                     selectedItemIds = Set(visibleItems.map(\.id))
                 }
