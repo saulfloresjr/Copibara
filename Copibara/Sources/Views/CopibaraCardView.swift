@@ -76,6 +76,7 @@ struct CopibaraCardView: View {
                     if let nsImage = cachedImage {
                         Image(nsImage: nsImage)
                             .resizable()
+                            .interpolation(.high)
                             .aspectRatio(contentMode: .fit)
                             .frame(maxHeight: 80)
                             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
@@ -269,7 +270,7 @@ struct CopibaraCardView: View {
             .appendingPathComponent("images", isDirectory: true)
             .appendingPathComponent(fileName)
         // Downscaled thumbnail, not the full image — the card shows it at ~80pt.
-        return ImageThumbnail.load(imagePath, maxPixel: 400)
+        return ImageThumbnail.load(imagePath, maxPixel: 600)
     }
 }
 

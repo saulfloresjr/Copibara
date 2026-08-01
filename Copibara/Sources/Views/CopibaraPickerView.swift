@@ -535,6 +535,7 @@ private struct PickerRow: View {
                     if let image = cachedImage {
                         Image(nsImage: image)
                             .resizable()
+                            .interpolation(.high)
                             .aspectRatio(contentMode: .fit)
                             .frame(maxHeight: 48)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -613,7 +614,7 @@ private struct PickerRow: View {
             .appendingPathComponent("images", isDirectory: true)
             .appendingPathComponent(fileName)
         // Downscaled thumbnail — the picker row shows it at ~48pt.
-        return ImageThumbnail.load(imagePath, maxPixel: 160)
+        return ImageThumbnail.load(imagePath, maxPixel: 800)
     }
 }
 
