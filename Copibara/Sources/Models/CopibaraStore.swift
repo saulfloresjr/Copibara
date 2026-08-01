@@ -130,7 +130,13 @@ final class CopibaraStore {
     /// memory and the startup JSON decode as history grows. Configurable via defaults.
     var maxUnpinnedHistory: Int {
         let v = UserDefaults.standard.integer(forKey: "maxUnpinnedHistory")
-        return v > 0 ? v : 5000
+        return v > 0 ? v : 10_000
+    }
+
+    /// Total bytes across all stored clips (image PNG bytes + text bytes). Cheap — each
+    /// item already carries its own `size`, so this is an in-memory sum, no disk scan.
+    var totalStoredBytes: Int {
+        items.reduce(0) { $0 + $1.size }
     }
     /// Trim only once the overflow reaches this, then drop the batch — so the O(n)
     /// pass runs about once every `trimSlack` adds instead of on every single copy.

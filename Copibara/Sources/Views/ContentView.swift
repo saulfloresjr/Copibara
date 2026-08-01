@@ -487,6 +487,20 @@ struct ContentView: View {
               : "Forage mode OFF — turn on to collect finds with their source (\(Shortcuts.forageDisplay)). Right-click for settings.")
     }
 
+    /// Saved-clip count + total size, so you can see the store's weight and when to
+    /// purge. Turns orange as the unpinned count approaches the cap.
+    private var storageStat: some View {
+        let count = store.items.count
+        let cap = store.maxUnpinnedHistory
+        let unpinned = count - store.pinnedCount
+        let near = unpinned >= Int(Double(cap) * 0.9)
+        let size = ByteCountFormatter.string(fromByteCount: Int64(store.totalStoredBytes), countStyle: .file)
+        return Text("\(count.formatted()) clips · \(size)")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(near ? Color.orange : Color.appTextTertiary)
+            .help("\(count.formatted()) saved · \(size) total. Auto-caps at \(cap.formatted()) unpinned; foraged/pinned clips are always kept. Use the trash menu to purge sooner.")
+    }
+
     private var header: some View {
         HStack(spacing: Spacing.base) {
             // Logo
@@ -512,9 +526,12 @@ struct ContentView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
 
-                Text("Copibara")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Color.appTextPrimary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Copibara")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Color.appTextPrimary)
+                    storageStat
+                }
             }
 
             // Search
