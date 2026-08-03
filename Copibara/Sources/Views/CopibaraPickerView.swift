@@ -600,21 +600,18 @@ private struct PickerRow: View {
         .onHover { isHovering = $0 }
         .contentShape(Rectangle())
         .onAppear {
-            if item.type == .image && cachedImage == nil {
-                cachedImage = loadImage()
-            }
+            guard item.type == .image, cachedImage == nil, let url = imageURL else { return }
+            Task { @MainActor in cachedImage = await ImageThumbnail.loadAsync(url, maxPixel: 800) }
         }
+        .onDisappear { cachedImage = nil }   // release off-screen rows; shared cache keeps a copy
     }
 
-    private func loadImage() -> NSImage? {
+    private var imageURL: URL? {
         guard let fileName = item.imageFileName else { return nil }
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let imagePath = appSupport
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("CopibaraManager", isDirectory: true)
             .appendingPathComponent("images", isDirectory: true)
             .appendingPathComponent(fileName)
-        // Downscaled thumbnail — the picker row shows it at ~48pt.
-        return ImageThumbnail.load(imagePath, maxPixel: 800)
     }
 }
 

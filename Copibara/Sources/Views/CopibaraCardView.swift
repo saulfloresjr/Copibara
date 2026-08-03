@@ -187,10 +187,16 @@ struct CopibaraCardView: View {
         .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .onHover { isHovering = $0 }
         .onAppear {
-            // Cache image once on appear, not on every render
-            if item.type == .image && cachedImage == nil {
-                cachedImage = loadItemImage()
-            }
+            // Decode OFF the main thread (scrolling never blocks), from a shared bounded
+            // cache so thumbnails can't pile up into gigabytes.
+            guard item.type == .image, cachedImage == nil, let url = imageURL else { return }
+            Task { @MainActor in cachedImage = await ImageThumbnail.loadAsync(url, maxPixel: 600) }
+        }
+        .onDisappear {
+            // Release this card's thumbnail when it scrolls off. The shared cache keeps a
+            // copy (bounded), so scrolling back is a fast cache hit — but off-screen cards
+            // no longer hold gigabytes of decoded images alive.
+            cachedImage = nil
         }
         .onTapGesture(count: 2) {
             onDoubleClick?()
@@ -261,16 +267,13 @@ struct CopibaraCardView: View {
         .help(capture.url?.absoluteString ?? capture.windowTitle ?? "")
     }
 
-    /// Load the image from ~/Library/Application Support/CopibaraManager/images/
-    private func loadItemImage() -> NSImage? {
+    /// URL of the stored image in ~/Library/Application Support/CopibaraManager/images/
+    private var imageURL: URL? {
         guard let fileName = item.imageFileName else { return nil }
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let imagePath = appSupport
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("CopibaraManager", isDirectory: true)
             .appendingPathComponent("images", isDirectory: true)
             .appendingPathComponent(fileName)
-        // Downscaled thumbnail, not the full image — the card shows it at ~80pt.
-        return ImageThumbnail.load(imagePath, maxPixel: 600)
     }
 }
 
