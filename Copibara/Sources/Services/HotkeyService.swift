@@ -16,6 +16,7 @@ final class HotkeyCenter {
     enum ID: UInt32 {
         case picker = 1
         case forage = 2
+        case favorites = 3
     }
 
     private var handlers: [UInt32: () -> Void] = [:]

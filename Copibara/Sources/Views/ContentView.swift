@@ -49,44 +49,7 @@ struct ContentView: View {
                         onPasteItem?(item)
                     }
                 )
-                .overlay(alignment: .trailing) {
-                    // Detail panel overlays the grid instead of resizing it
-                    if selectedItemIds.count == 1,
-                       let id = selectedItemIds.first,
-                       let item = store.item(for: id) {
-                        DetailPanelView(
-                            item: item,
-                            onCopy: {
-                                store.copyToClipboard(id: id)
-                            },
-                            onDelete: {
-                                selectedItemIds.removeAll()
-                                store.deleteItem(id: id)
-                            },
-                            onClose: {
-                                selectedItemIds.removeAll()
-                            },
-                            onSaveImage: {
-                                store.exportImage(for: id)
-                            }
-                        )
-                    } else if selectedItemIds.count > 1 {
-                        BulkActionBar(
-                            selectedCount: selectedItemIds.count,
-                            onCopyAll: {
-                                store.copyItemsToClipboard(ids: selectedItemIds)
-                            },
-                            onDeleteAll: {
-                                store.deleteItems(ids: selectedItemIds)
-                                selectedItemIds.removeAll()
-                            },
-                            onDeselectAll: {
-                                selectedItemIds.removeAll()
-                                lastClickedId = nil
-                            }
-                        )
-                    }
-                }
+                .overlay(alignment: .trailing) { selectionSidebar }
             }
 
             // Inline overlay modals (avoids .sheet() crash in MenuBarExtra)
@@ -381,18 +344,7 @@ struct ContentView: View {
             }
             return .handled
         }
-        .onKeyPress(characters: .alphanumerics) { press in
-            // ⌘A: select all visible items
-            if press.characters == "a" && NSEvent.modifierFlags.contains(.command) {
-                guard !isModalOpen else { return .ignored }
-                let visibleItems = store.filteredItems(search: debouncedSearch)
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    selectedItemIds = Set(visibleItems.map(\.id))
-                }
-                return .handled
-            }
-            return .ignored
-        }
+        .onKeyPress(characters: .alphanumerics) { handleCommandKey($0) }
         .focusable()
         .onAppear {
             // Aggressively force the MenuBarExtra panel to become key window
@@ -409,6 +361,60 @@ struct ContentView: View {
         .onDisappear {
             removeKeyMonitor()
         }
+    }
+
+    // MARK: - Selection Sidebar
+
+    /// The trailing panel: a detail view for one selected clip, the bulk bar for
+    /// several, nothing for none. Extracted from `body` — inlined, the two
+    /// constructions pushed the view expression past what the type-checker will solve.
+    @ViewBuilder
+    private var selectionSidebar: some View {
+        if selectedItemIds.count == 1,
+           let id = selectedItemIds.first,
+           let item = store.item(for: id) {
+            DetailPanelView(
+                item: item,
+                onCopy: { store.copyToClipboard(id: id) },
+                onDelete: {
+                    selectedItemIds.removeAll()
+                    store.deleteItem(id: id)
+                },
+                onClose: { selectedItemIds.removeAll() },
+                onSaveImage: { store.exportImage(for: id) },
+                isFavorite: item.isFavorite,
+                onToggleFavorite: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        _ = store.toggleFavorite(id: id)
+                    }
+                }
+            )
+        } else if selectedItemIds.count > 1 {
+            BulkActionBar(
+                selectedCount: selectedItemIds.count,
+                onCopyAll: { store.copyItemsToClipboard(ids: selectedItemIds) },
+                onDeleteAll: {
+                    store.deleteItems(ids: selectedItemIds)
+                    selectedItemIds.removeAll()
+                },
+                onDeselectAll: {
+                    selectedItemIds.removeAll()
+                    lastClickedId = nil
+                },
+                allFavorited: selectionIsAllFavorited,
+                onToggleFavorites: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        store.setFavorite(!selectionIsAllFavorited, ids: selectedItemIds)
+                    }
+                }
+            )
+        }
+    }
+
+    /// True when every selected clip is starred — which makes the star action an
+    /// unstar. An empty selection is not "all favorited".
+    private var selectionIsAllFavorited: Bool {
+        !selectedItemIds.isEmpty && selectedItemIds.allSatisfy { store.isFavorite(id: $0) }
     }
 
     // MARK: - Header
@@ -539,8 +545,9 @@ struct ContentView: View {
 
             // Actions
             HStack(spacing: Spacing.sm) {
-                if store.activeBoard == "all" {
-                    // "All" board: show a menu with per-board clear + nuclear option
+                if BoardFilter.isVirtual(store.activeBoard) {
+                    // "All" / "Favorites" are views across boards — there's no single
+                    // board to empty, so offer the per-board menu instead.
                     Menu {
                         Section("Clear Board") {
                             ForEach(store.pinboards, id: \.id) { board in
@@ -557,9 +564,9 @@ struct ContentView: View {
                         Button(role: .destructive) {
                             showClearAllBoardsConfirm = true
                         } label: {
-                            Label("Clear Everything (\(store.items.count))", systemImage: "trash.fill")
+                            Label("Clear Everything (\(store.items.count - store.keptCount))", systemImage: "trash.fill")
                         }
-                        .disabled(store.items.isEmpty)
+                        .disabled(store.items.count == store.keptCount)
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 13))
@@ -767,10 +774,37 @@ struct ContentView: View {
         return nil
     }
 
+    /// ⌘-letter shortcuts on the grid. Lives outside `body` so the view's expression
+    /// stays simple enough for the type-checker.
+    private func handleCommandKey(_ press: KeyPress) -> KeyPress.Result {
+        guard !isModalOpen, NSEvent.modifierFlags.contains(.command) else { return .ignored }
+
+        switch press.characters {
+        case "a":   // select every visible clip
+            let visibleItems = store.filteredItems(search: debouncedSearch)
+            withAnimation(.easeInOut(duration: 0.15)) {
+                selectedItemIds = Set(visibleItems.map(\.id))
+            }
+            return .handled
+
+        case "d":   // star/unstar the selection — a mixed selection stars, an
+                    // all-starred one unstars, so it toggles either way
+            guard !selectedItemIds.isEmpty else { return .ignored }
+            let allStarred = selectionIsAllFavorited
+            withAnimation(.easeInOut(duration: 0.2)) {
+                store.setFavorite(!allStarred, ids: selectedItemIds)
+            }
+            return .handled
+
+        default:
+            return .ignored
+        }
+    }
+
     /// Cycles to the next board: all → board1 → board2 → … → all
     private func handleTab() {
         guard !isModalOpen else { return }
-        let allTabs = ["all"] + store.pinboards.map(\.id)
+        let allTabs = [BoardFilter.all, BoardFilter.favorites] + store.pinboards.map(\.id)
         guard let idx = allTabs.firstIndex(of: store.activeBoard) else { return }
         let nextIdx = (idx + 1) % allTabs.count
         store.activeBoard = allTabs[nextIdx]

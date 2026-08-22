@@ -7,20 +7,24 @@ struct CopibaraCardView: View {
     let isMultiSelect: Bool
     var isYapivo: Bool = false
     var isForaged: Bool = false
+    var isFavorite: Bool = false
     let onSelect: () -> Void
     let onCopy: () -> Void
     let onDelete: () -> Void
     var onSaveImage: (() -> Void)? = nil
     var onRemoveBackground: (() -> Void)? = nil
     var onAIUpscale: ((UpscaleMode) -> Void)? = nil
+    var onToggleFavorite: (() -> Void)? = nil
     var onDoubleClick: (() -> Void)? = nil
 
     /// Yapivo energetic orange color
     private let yapivOrange = Color(red: 1.0, green: 0.42, blue: 0.21) // #FF6B35
 
-    /// Cards earned by a capture pipeline get a coloured glow that says where they
-    /// came from at a glance: orange for voice, green for foraged.
+    /// Cards get a coloured glow saying what they are at a glance: amber for starred,
+    /// orange for voice, green for foraged. A star is a choice the user made by hand,
+    /// so it outranks where the clip happened to come from.
     private var accent: Color? {
+        if isFavorite { return .favoriteAccent }
         if isYapivo { return yapivOrange }
         if isForaged { return .forageAccent }
         return nil
@@ -55,6 +59,23 @@ struct CopibaraCardView: View {
                 .clipShape(Capsule())
 
                 Spacer()
+
+                // The star stays visible once set — it's state, not a hover affordance —
+                // while copy/delete still appear only on hover.
+                if let onToggleFavorite {
+                    Button(action: onToggleFavorite) {
+                        Image(systemName: isFavorite ? "star.fill" : "star")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(isFavorite ? Color.favoriteAccent : Color.appTextSecondary)
+                            .frame(width: 24, height: 24)
+                            .background(Color.appSurface)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(isFavorite || (isHovering && !isMultiSelect) ? 1 : 0)
+                    .allowsHitTesting(!isMultiSelect)
+                    .help(isFavorite ? "Remove from Favorites" : "Add to Favorites")
+                }
 
                 // Always rendered, visibility controlled by opacity — no layout shift on hover
                 HStack(spacing: 4) {
@@ -206,6 +227,11 @@ struct CopibaraCardView: View {
         }
         .contextMenu {
             Button("Copy to Clipboard") { onCopy() }
+            if let onToggleFavorite {
+                Button(isFavorite ? "Remove from Favorites" : "Add to Favorites") {
+                    onToggleFavorite()
+                }
+            }
             if item.type == .image, let onSaveImage = onSaveImage {
                 Button("Save Image") { onSaveImage() }
             }

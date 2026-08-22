@@ -6,6 +6,8 @@ struct DetailPanelView: View {
     let onDelete: () -> Void
     let onClose: () -> Void
     var onSaveImage: (() -> Void)? = nil
+    var isFavorite: Bool = false
+    var onToggleFavorite: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -16,6 +18,19 @@ struct DetailPanelView: View {
                     .foregroundStyle(Color.appTextPrimary)
 
                 Spacer()
+
+                if let onToggleFavorite {
+                    Button(action: onToggleFavorite) {
+                        Image(systemName: isFavorite ? "star.fill" : "star")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(isFavorite ? Color.favoriteAccent : Color.appTextTertiary)
+                            .frame(width: 24, height: 24)
+                            .background(isFavorite ? Color.favoriteAccent.opacity(0.15) : Color.appSurfaceHover)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(isFavorite ? "Remove from Favorites (⌘D)" : "Add to Favorites (⌘D)")
+                }
 
                 Button(action: onClose) {
                     Image(systemName: "xmark")
@@ -69,6 +84,9 @@ struct DetailPanelView: View {
                         MetadataRow(label: "Size", value: formatSize(item.size))
                         MetadataRow(label: "Copied", value: item.createdAt.formatted(date: .abbreviated, time: .shortened))
                         MetadataRow(label: "Board", value: item.boardId.capitalized)
+                        if isFavorite {
+                            MetadataRow(label: "Saved", value: "⭐️ Favorite — kept through clears")
+                        }
                     }
                 }
                 .padding(Spacing.xl)

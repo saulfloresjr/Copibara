@@ -14,12 +14,25 @@ struct PinboardTabsView: View {
                 // "All" tab — always first, not draggable
                 TabButton(
                     label: "🗂 All",
-                    isActive: store.activeBoard == "all"
+                    isActive: store.activeBoard == BoardFilter.all
                 ) {
                     withAnimation(.easeInOut(duration: 0.1)) {
-                        store.activeBoard = "all"
+                        store.activeBoard = BoardFilter.all
                     }
                 }
+
+                // Favorites — a view across every board rather than a board of its
+                // own, so it sits beside "All" and can't be dragged or deleted.
+                TabButton(
+                    label: store.favoriteCount > 0 ? "⭐️ Favorites \(store.favoriteCount)" : "⭐️ Favorites",
+                    isActive: store.activeBoard == BoardFilter.favorites,
+                    tint: .favoriteAccent
+                ) {
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        store.activeBoard = BoardFilter.favorites
+                    }
+                }
+                .help("Clips you starred — kept through clears, summon with \(Shortcuts.favoritesDisplay)")
 
                 ForEach(store.pinboards) { board in
                     TabButton(
@@ -30,6 +43,7 @@ struct PinboardTabsView: View {
                             store.activeBoard = board.id
                         }
                     }
+                    .help("Drag to reorder · Right-click to delete")
                     .contextMenu {
                         Button(role: .destructive) {
                             boardToDelete = board
@@ -113,6 +127,8 @@ private struct BoardDropDelegate: DropDelegate {
 private struct TabButton: View {
     let label: String
     let isActive: Bool
+    /// Active fill. Favorites uses amber so the starred view is unmistakable.
+    var tint: Color = .appPrimary
     let action: () -> Void
 
     @State private var isHovering = false
@@ -126,11 +142,10 @@ private struct TabButton: View {
                 .padding(.vertical, 6)
                 .background(
                     Capsule()
-                        .fill(isActive ? Color.appPrimary : (isHovering ? Color.appSurfaceHover : Color.clear))
+                        .fill(isActive ? tint : (isHovering ? Color.appSurfaceHover : Color.clear))
                 )
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .help("Drag to reorder · Right-click to delete")
     }
 }

@@ -51,4 +51,9 @@ enum Shortcuts {
     // MARK: - Picker
 
     static let pickerDisplay = "⌘⇧V"
+
+    /// Opens the picker straight on Favorites. ⌃⌘V rather than the mnemonic ⌘⇧B
+    /// because browsers bind that to the bookmarks bar — and a browser is exactly
+    /// where these favourited links get pasted.
+    static let favoritesDisplay = "⌃⌘V"
 }

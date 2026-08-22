@@ -32,6 +32,11 @@ extension Color {
     static let forageAccent = Color(light: Color(red: 46/255, green: 155/255, blue: 78/255),
                                     dark: Color(red: 88/255, green: 200/255, blue: 120/255))
 
+    // Favourites — amber, the universal "starred" colour. Distinct from the type
+    // palette so a star never reads as "this clip is an image".
+    static let favoriteAccent = Color(light: Color(red: 214/255, green: 152/255, blue: 18/255),
+                                      dark: Color(red: 255/255, green: 199/255, blue: 63/255))
+
     // Content Type Colors
     static let typeText = Color(red: 0/255, green: 136/255, blue: 255/255)
     static let typeLink = Color(red: 88/255, green: 86/255, blue: 214/255)

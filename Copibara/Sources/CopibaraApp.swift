@@ -42,6 +42,16 @@ final class CopibaraServices: ObservableObject {
             handler: togglePicker
         )
 
+        // 3b. Global hotkey (⌃⌘V) — open the picker straight on Favorites.
+        //     Deliberately not ⌘⇧B: browsers bind that to the bookmarks bar, and a
+        //     Carbon hotkey would swallow it in the very app these links get pasted into.
+        HotkeyCenter.shared.register(
+            .favorites,
+            keycode: UInt32(kVK_ANSI_V),
+            modifiers: UInt32(cmdKey | controlKey),
+            handler: { CopibaraApp.sharedTogglePicker(board: BoardFilter.favorites) }
+        )
+
         // 4. Forage mode auto-arm watcher.
         //    Its ⌘⇧F toggle is handled by the event tap below, not registered here,
         //    so editors keep their Find-in-Files. See Shortcuts.ownsForageChord().
@@ -154,13 +164,22 @@ struct CopibaraApp: App {
     // MARK: - Picker
 
     /// Static toggle so it can be called from the init() closure.
-    static func sharedTogglePicker() {
+    ///
+    /// `board` / `typeFilter` summon the picker *at* something — the Favorites hotkey
+    /// and Yapivo's `copibara://favorites` both come through here. A targeted summon
+    /// shows that view for this session only, leaving the tab a plain ⌘⇧V returns to
+    /// untouched (see `CopibaraPickerView.initialBoard`).
+    static func sharedTogglePicker(board: String? = nil, typeFilter: ContentType? = nil) {
         let services = CopibaraServices.shared
+        let isTargeted = board != nil || typeFilter != nil
 
-        // If panel is already visible, dismiss it
+        // If the panel is already visible, dismiss it. A plain summon stops there —
+        // that's the toggle. A targeted one reopens at its target instead: you asked
+        // for that list, not for the panel to disappear.
         if let panel = services.floatingPanel, panel.isVisible {
             panel.dismiss()
-            return
+            services.floatingPanel = nil
+            guard isTargeted else { return }
         }
 
         // Remember which app is currently frontmost BEFORE we activate ourselves.
@@ -180,7 +199,9 @@ struct CopibaraApp: App {
             },
             onDismiss: {
                 services.floatingPanel?.dismiss()
-            }
+            },
+            initialBoard: board,
+            initialTypeFilter: typeFilter
         )
 
         let hostingView = NSHostingView(rootView: pickerView)

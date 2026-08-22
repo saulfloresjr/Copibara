@@ -15,6 +15,7 @@ Copibara lives in your menu bar and silently captures everything you copy — te
 - **📋 Smart Clipboard History** — Automatically captures text, links, code, and images
 - **🎙️ Yapivo Integration** — Seamlessly syncs ideas, voice captures, and snippets from the Yapivo app into a dedicated board
 - **📸 Screenshot Capture** — Press `~` to capture screen regions directly into Copibara
+- **⭐️ Favorites** — Star the links you paste every day; `⌃⌘V` summons just those, and they survive every clear
 - **📌 Custom Boards** — Organize clips into pinboards for different projects
 - **⌨️ Keyboard-First** — `⌘⇧V` opens the picker, arrow keys navigate, Enter pastes
 - **🔍 Instant Search** — Filter clips by content or type in real-time
@@ -59,9 +60,12 @@ cp .env.example .env
 | Shortcut | Action |
 |----------|--------|
 | `⌘⇧V` | Open clipboard picker |
+| `⌃⌘V` | Open the picker on Favorites |
+| `⌘D` | Star / unstar the selected clip(s) |
 | `↑` `↓` | Navigate clips |
 | `↩` | Paste selected clip |
 | `⇥` | Switch board |
+| `⇧⇥` | Cycle type filter |
 | `⎋` | Close picker |
 | `~` | Capture screenshot region |
 | `⌘` + Click | Multi-select clips |

@@ -27,10 +27,12 @@ struct CopibaraGridView: View {
 
     /// Items filtered by board, search, and content type.
     private var displayItems: [CopibaraItem] {
-        let board = store.activeBoard
-        var result = board == "all"
-            ? store.items
-            : store.items.filter { $0.boardId == board }
+        var result: [CopibaraItem]
+        switch store.activeBoard {
+        case BoardFilter.all:       result = store.items
+        case BoardFilter.favorites: result = store.items.filter(\.isFavorite)
+        default:                    result = store.items.filter { $0.boardId == store.activeBoard }
+        }
         if !searchText.isEmpty {
             let query = searchText.lowercased()
             result = result.filter { $0.matches(query) }
@@ -45,7 +47,11 @@ struct CopibaraGridView: View {
         let items = displayItems
 
         if items.isEmpty && searchText.isEmpty && activeTypeFilter == nil {
-            emptyState
+            if store.activeBoard == BoardFilter.favorites {
+                favoritesEmptyState
+            } else {
+                emptyState
+            }
         } else {
             VStack(spacing: 0) {
                 // Type filter pills
@@ -65,29 +71,7 @@ struct CopibaraGridView: View {
                                 if !collapsedSections.contains(section.id) {
                                     LazyVGrid(columns: columns, spacing: Spacing.lg) {
                                         ForEach(section.items) { item in
-                                            CopibaraCardView(
-                                                item: item,
-                                                isSelected: selectedItemIds.contains(item.id),
-                                                isMultiSelect: isMultiSelect,
-                                                isYapivo: item.boardId == "yapivo",
-                                                isForaged: item.capture != nil,
-                                                onSelect: {
-                                                    handleClick(item: item, items: items)
-                                                },
-                                                onCopy: { store.copyToClipboard(id: item.id) },
-                                                onDelete: {
-                                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                                        selectedItemIds.remove(item.id)
-                                                        store.deleteItem(id: item.id)
-                                                    }
-                                                },
-                                                onSaveImage: { store.exportImage(for: item.id) },
-                                                onRemoveBackground: { store.removeBackground(id: item.id) },
-                                                onAIUpscale: { mode in store.aiUpscale(id: item.id, mode: mode) },
-                                                onDoubleClick: {
-                                                    onDoubleClick?(item)
-                                                }
-                                            )
+                                            card(for: item, in: items)
                                         }
                                     }
                                     .padding(.horizontal, Spacing.xl)
@@ -103,6 +87,39 @@ struct CopibaraGridView: View {
             }
             .id(store.activeBoard)
         }
+    }
+
+    // MARK: - Card
+
+    /// One grid card, wired to the store. Extracted from `body`: with every action a
+    /// card can take inlined, the surrounding expression got heavy enough that the
+    /// type-checker gave up on it ("ambiguous use of init").
+    private func card(for item: CopibaraItem, in items: [CopibaraItem]) -> some View {
+        CopibaraCardView(
+            item: item,
+            isSelected: selectedItemIds.contains(item.id),
+            isMultiSelect: isMultiSelect,
+            isYapivo: item.boardId == "yapivo",
+            isForaged: item.capture != nil,
+            isFavorite: item.isFavorite,
+            onSelect: { handleClick(item: item, items: items) },
+            onCopy: { store.copyToClipboard(id: item.id) },
+            onDelete: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    selectedItemIds.remove(item.id)
+                    store.deleteItem(id: item.id)
+                }
+            },
+            onSaveImage: { store.exportImage(for: item.id) },
+            onRemoveBackground: { store.removeBackground(id: item.id) },
+            onAIUpscale: { mode in store.aiUpscale(id: item.id, mode: mode) },
+            onToggleFavorite: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    _ = store.toggleFavorite(id: item.id)
+                }
+            },
+            onDoubleClick: { onDoubleClick?(item) }
+        )
     }
 
     // MARK: - Type Filter Bar
@@ -249,6 +266,47 @@ struct CopibaraGridView: View {
                 Text("to paste content")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.appTextTertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(Spacing.xxl)
+    }
+
+    /// Empty Favorites isn't an empty clipboard — it means the gesture hasn't been
+    /// discovered yet, so this teaches it instead of apologising.
+    private var favoritesEmptyState: some View {
+        VStack(spacing: Spacing.base) {
+            Image(systemName: "star")
+                .font(.system(size: 40))
+                .foregroundStyle(Color.favoriteAccent)
+
+            Text("No favorites yet")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.appTextPrimary)
+
+            Text("Star the links you paste all the time — they'll stay here, safe from clears, ready to summon.")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.appTextSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+
+            VStack(spacing: Spacing.sm) {
+                HStack(spacing: 4) {
+                    Text("Hover any clip and click the")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.appTextTertiary)
+                    Image(systemName: "star")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.favoriteAccent)
+                }
+                HStack(spacing: 4) {
+                    Text("Then summon them with")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.appTextTertiary)
+                    KeyboardKey("⌃")
+                    KeyboardKey("⌘")
+                    KeyboardKey("V")
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

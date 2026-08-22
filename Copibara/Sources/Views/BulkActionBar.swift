@@ -6,6 +6,9 @@ struct BulkActionBar: View {
     let onCopyAll: () -> Void
     let onDeleteAll: () -> Void
     let onDeselectAll: () -> Void
+    /// True when every selected clip is already starred — the button then unstars.
+    var allFavorited: Bool = false
+    var onToggleFavorites: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -65,6 +68,20 @@ struct BulkActionBar: View {
                         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
                 }
                 .buttonStyle(.plain)
+
+                if let onToggleFavorites {
+                    Button(action: onToggleFavorites) {
+                        Label(allFavorited ? "Remove from Favorites" : "Add to Favorites",
+                              systemImage: allFavorited ? "star.slash" : "star")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.sm)
+                            .foregroundStyle(Color.favoriteAccent)
+                            .background(Color.favoriteAccent.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Button(action: onDeleteAll) {
                     Label("Delete Selected", systemImage: "trash")

@@ -57,6 +57,22 @@ struct CopibaraItem: Identifiable, Codable, Equatable {
     /// Convenience for the optional above.
     var isPinned: Bool { pinned == true }
 
+    /// Starred by hand. Favourites are the shortlist you summon and paste from —
+    /// the links you reach for daily — so they're exempt from the history cap and
+    /// from "Clear Everything", exactly like foraged finds.
+    ///
+    /// Optional for the same decoder reason as `pinned` above: a non-optional Bool
+    /// would make every pre-existing data.json throw on the missing key, which the
+    /// store reads as "no data" and reseeds — wiping the user's history.
+    var favorite: Bool?
+
+    /// Convenience for the optional above.
+    var isFavorite: Bool { favorite == true }
+
+    /// Kept on purpose — foraged/pinned or favourited. These survive the history cap
+    /// and "Clear Everything"; everything else is churn.
+    var isKept: Bool { isPinned || isFavorite }
+
     static func == (lhs: CopibaraItem, rhs: CopibaraItem) -> Bool {
         lhs.id == rhs.id
     }

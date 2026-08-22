@@ -16,7 +16,7 @@ final class CopibaraStore {
 
     var items: [CopibaraItem] = []
     var pinboards: [Pinboard] = [.clipboard, .yapivo]
-    var activeBoard: String = "all"
+    var activeBoard: String = BoardFilter.all
     var nextId: Int = 1
 
     /// When true, the monitor will skip the next clipboard change.
@@ -109,7 +109,7 @@ final class CopibaraStore {
     /// If no ordinary board exists, auto-creates the default Copibara board.
     var defaultBoardId: String {
         // If the user is viewing a specific ordinary board, use it
-        if activeBoard != "all", !Self.reservedBoardIds.contains(activeBoard),
+        if !BoardFilter.isVirtual(activeBoard), !Self.reservedBoardIds.contains(activeBoard),
            pinboards.contains(where: { $0.id == activeBoard }) {
             return activeBoard
         }
@@ -125,9 +125,10 @@ final class CopibaraStore {
 
     // MARK: - History cap
 
-    /// Keep at most this many UNPINNED items. Foraged/pinned clips are never trimmed —
-    /// the whole point of pinning is that they outlive routine churn. Bounds both
-    /// memory and the startup JSON decode as history grows. Configurable via defaults.
+    /// Keep at most this many UNPINNED items. Foraged/pinned and favourited clips are
+    /// never trimmed — the whole point of keeping one is that it outlives routine
+    /// churn. Bounds both memory and the startup JSON decode as history grows.
+    /// Configurable via defaults.
     var maxUnpinnedHistory: Int {
         let v = UserDefaults.standard.integer(forKey: "maxUnpinnedHistory")
         return v > 0 ? v : 10_000
@@ -150,7 +151,7 @@ final class CopibaraStore {
         var keptUnpinned = 0
         var removed: [CopibaraItem] = []
         items.removeAll { item in
-            if item.isPinned { return false }                 // never trim pinned/foraged
+            if item.isKept { return false }                   // never trim pinned/foraged/favourited
             if keptUnpinned < cap { keptUnpinned += 1; return false }
             removed.append(item)
             return true
@@ -421,8 +422,9 @@ final class CopibaraStore {
     }
 
     func clearAll() {
-        // Safety: never clear when viewing "all" boards
-        guard activeBoard != "all" else { return }
+        // Safety: never clear from a virtual board — "All" and "Favorites" are views
+        // over the real boards, so there's no single board here to empty.
+        guard !BoardFilter.isVirtual(activeBoard) else { return }
         // Delete image files for items being cleared
         let toRemove = items.filter { $0.boardId == activeBoard }
         for item in toRemove {
@@ -448,25 +450,30 @@ final class CopibaraStore {
         save()
     }
 
-    /// Nuclear option: clear every item across all boards — except pinned finds.
+    /// Nuclear option: clear every item across all boards — except the ones you kept
+    /// on purpose: foraged finds and favourites.
     ///
-    /// Foraged items survive this deliberately. The whole point of collecting is that
-    /// the good stuff outlives routine clipboard churn; a cleanup you run monthly
-    /// shouldn't take out the content bank you've been building. To remove them,
-    /// clear the Collected board directly or delete them individually.
+    /// Those survive this deliberately. The whole point of collecting or starring is
+    /// that the good stuff outlives routine clipboard churn; a cleanup you run monthly
+    /// shouldn't take out the content bank you've been building, or the links you
+    /// paste every day. To remove them, unfavourite them, clear the Collected board
+    /// directly, or delete them individually.
     func clearAllBoards() {
-        for item in items where !item.isPinned {
+        for item in items where !item.isKept {
             if let fileName = item.imageFileName {
                 let fileURL = imagesDir.appendingPathComponent(fileName)
                 try? FileManager.default.removeItem(at: fileURL)
             }
         }
-        items.removeAll { !$0.isPinned }
+        items.removeAll { !$0.isKept }
         save()
     }
 
     /// How many pinned items "Clear Everything" would leave behind.
     var pinnedCount: Int { items.filter(\.isPinned).count }
+
+    /// How many clips survive "Clear Everything" — pinned/foraged plus favourites.
+    var keptCount: Int { items.filter(\.isKept).count }
 
     /// Copy item content to the system clipboard. Handles both text and image items.
     func copyToClipboard(id: Int) {
@@ -524,6 +531,56 @@ final class CopibaraStore {
         save()
     }
 
+    // MARK: - Favorites
+
+    /// How many clips are starred — shown on the Favorites tab so the shortlist's
+    /// size is visible without opening it.
+    var favoriteCount: Int { items.reduce(0) { $0 + ($1.isFavorite ? 1 : 0) } }
+
+    func isFavorite(id: Int) -> Bool {
+        items.first(where: { $0.id == id })?.isFavorite ?? false
+    }
+
+    /// Flip a clip's star. Returns the new state so callers can phrase their toast.
+    ///
+    /// Unstarring writes `nil` rather than `false` so the key leaves data.json
+    /// entirely — favourites then cost nothing for the vast majority of clips that
+    /// never get one.
+    @discardableResult
+    func toggleFavorite(id: Int) -> Bool {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return false }
+        let now = !items[index].isFavorite
+        items[index].favorite = now ? true : nil
+        save()
+        return now
+    }
+
+    /// Star or unstar a whole selection in one write — one `save()` for the batch,
+    /// not one per clip.
+    func setFavorite(_ favorite: Bool, ids: Set<Int>) {
+        guard !ids.isEmpty else { return }
+        for index in items.indices where ids.contains(items[index].id) {
+            items[index].favorite = favorite ? true : nil
+        }
+        save()
+    }
+
+    /// Star the most recent clip — the hands-free "favorite that" path, so a link you
+    /// just copied joins the shortlist without touching the mouse.
+    /// Returns the item it starred, or nil if there was nothing to star.
+    @discardableResult
+    func favoriteLatest() -> CopibaraItem? {
+        guard let index = items.indices.first else {
+            toast = "Nothing to favorite yet"
+            return nil
+        }
+        items[index].favorite = true
+        save()
+        let item = items[index]
+        toast = "⭐️ Favorited \(item.preview.prefix(40))"
+        return item
+    }
+
     // MARK: - Pinboards
 
     func addPinboard(name: String, icon: String = "📌") {
@@ -546,7 +603,7 @@ final class CopibaraStore {
         items.removeAll { $0.boardId == id }
         pinboards.removeAll { $0.id == id }
         if activeBoard == id {
-            activeBoard = "all"
+            activeBoard = BoardFilter.all
         }
         save()
     }
@@ -554,10 +611,14 @@ final class CopibaraStore {
     // MARK: - Filtering
 
     func filteredItems(search: String) -> [CopibaraItem] {
-        // "all" shows items from every board; otherwise filter by active board
-        var result = activeBoard == "all"
-            ? items
-            : items.filter { $0.boardId == activeBoard }
+        // "all" shows every board, "favorites" the starred shortlist across boards;
+        // anything else filters to that one board.
+        var result: [CopibaraItem]
+        switch activeBoard {
+        case BoardFilter.all:       result = items
+        case BoardFilter.favorites: result = items.filter(\.isFavorite)
+        default:                    result = items.filter { $0.boardId == activeBoard }
+        }
         if !search.isEmpty {
             let query = search.lowercased()
             result = result.filter { $0.matches(query) }
