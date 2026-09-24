@@ -77,6 +77,20 @@ final class CopibaraServices: ObservableObject {
             }
         }
 
+        // 7. On quit, tell Yapivo the picker is gone if it was up. orderOut/deinit
+        //    don't reliably run as the process exits, so post from the terminate hook.
+        //    Force-quit (SIGKILL) can't be caught — Yapivo distrusts a stale "open"
+        //    after its own timeout in that case.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            if let panel = self?.floatingPanel, panel.isVisible {
+                PickerPresence.post(false)
+            }
+        }
+
         print("[Copibara] All services started. AXIsProcessTrusted: \(AXIsProcessTrusted())")
     }
 }
