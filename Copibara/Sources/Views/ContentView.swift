@@ -458,19 +458,15 @@ struct ContentView: View {
         Button {
             forage.toggle()
         } label: {
-            Image(systemName: forage.isArmed ? "leaf.fill" : "leaf")
-                .font(.system(size: 13, weight: forage.isArmed ? .semibold : .regular))
-                .foregroundStyle(forage.isArmed ? Color.forageAccent : Color.appTextSecondary)
-                .frame(width: 28, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.sm)
-                        .fill(forage.isArmed ? Color.forageAccent.opacity(0.18) : Color.appSurface)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.sm)
-                        .stroke(forage.isArmed ? Color.forageAccent.opacity(0.55) : Color.clear,
-                                lineWidth: 1)
-                )
+            // Same shape as the other header icons; armed adds the green fill and ring
+            // so the on state stays unmistakable.
+            HeaderIcon(
+                systemName: forage.isArmed ? "leaf.fill" : "leaf",
+                tint: forage.isArmed ? .forageAccent : .appTextSecondary,
+                weight: forage.isArmed ? .semibold : .regular,
+                activeFill: forage.isArmed ? Color.forageAccent.opacity(0.18) : nil,
+                activeStroke: forage.isArmed ? Color.forageAccent.opacity(0.55) : nil
+            )
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -568,28 +564,22 @@ struct ContentView: View {
                         }
                         .disabled(store.items.count == store.keptCount)
                     } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.appTextSecondary)
-                            .frame(width: 32, height: 32)
-                            .background(Color.appSurfaceHover)
-                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+                        HeaderIcon(systemName: "trash")
                     }
-                    .menuStyle(.borderlessButton)
+                    // `.borderlessButton` drew the trash with AppKit's own sizing and
+                    // tint, ignoring this label; a plain-button menu keeps it identical
+                    // to its neighbours.
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
                     .menuIndicator(.hidden)
-                    .frame(width: 32, height: 32)
+                    .fixedSize()
                     .help("Clear boards…")
                 } else {
                     // Specific board: single clear button
                     Button {
                         showClearConfirm = true
                     } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.appTextSecondary)
-                            .frame(width: 32, height: 32)
-                            .background(Color.appSurfaceHover)
-                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+                        HeaderIcon(systemName: "trash")
                     }
                     .buttonStyle(.plain)
                     .help("Clear All")
@@ -602,12 +592,7 @@ struct ContentView: View {
                 Button {
                     WindowCapturePicker.shared.capture(status: { store.toast = $0 })
                 } label: {
-                    Image(systemName: "macwindow.on.rectangle")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.appTextSecondary)
-                        .frame(width: 28, height: 28)
-                        .background(Color.appSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+                    HeaderIcon(systemName: "macwindow.on.rectangle")
                 }
                 .buttonStyle(.plain)
                 .help("Screenshot a window — pick by number (voice-drivable via Yapivo)")
@@ -615,12 +600,7 @@ struct ContentView: View {
                 Button {
                     grabElement()
                 } label: {
-                    Image(systemName: "wand.and.stars")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.appTextSecondary)
-                        .frame(width: 28, height: 28)
-                        .background(Color.appSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+                    HeaderIcon(systemName: "wand.and.stars")
                 }
                 .buttonStyle(.plain)
                 .help("Grab an element from the screen")
@@ -646,16 +626,12 @@ struct ContentView: View {
                 .fixedSize()
                 .help("Add Item")
 
-                // Quit
+                // Quit — same look as every other header icon (it used to be a
+                // dimmer, smaller glyph on its own grey tile).
                 Button {
                     NSApplication.shared.terminate(nil)
                 } label: {
-                    Image(systemName: "power")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.appTextTertiary)
-                        .frame(width: 32, height: 32)
-                        .background(Color.appSurfaceHover)
-                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+                    HeaderIcon(systemName: "power")
                 }
                 .buttonStyle(.plain)
                 .help("Quit Copibara")
@@ -823,5 +799,38 @@ struct ContentView: View {
             activeTypeFilter = allTypes.first
         }
         selectedItemIds.removeAll()
+    }
+}
+
+// MARK: - Header Icon
+
+/// The one look for every icon button in the header — trash, forage, window capture,
+/// element grab, quit — so none reads dimmer or heavier than its neighbours. No tile
+/// at rest (the header is already a surface), a highlight on hover.
+private struct HeaderIcon: View {
+    let systemName: String
+    var tint: Color = .appTextSecondary
+    var weight: Font.Weight = .regular
+    /// Fill/ring for a button that's showing an on state (the armed forage leaf).
+    var activeFill: Color? = nil
+    var activeStroke: Color? = nil
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 13, weight: weight))
+            .foregroundStyle(tint)
+            .frame(width: 28, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.sm)
+                    .fill(activeFill ?? (isHovering ? Color.appSurfaceHover : Color.clear))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.sm)
+                    .stroke(activeStroke ?? Color.clear, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+            .onHover { isHovering = $0 }
     }
 }

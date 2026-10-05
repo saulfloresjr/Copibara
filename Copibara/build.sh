@@ -34,7 +34,7 @@ fi
 # ── Configuration ─────────────────────────────────────────────
 APP_NAME="Copibara"
 BUNDLE_ID="com.copibara.app"
-VERSION="1.8.0"
+VERSION="1.8.1"
 BUILD_DIR="${SCRIPT_DIR}/.build/release"
 APP_DIR="${SCRIPT_DIR}/dist/${APP_NAME}.app"
 DMG_PATH="${SCRIPT_DIR}/dist/Copibara-Yapivo-v${VERSION}.dmg"
@@ -141,21 +141,35 @@ echo "   ✅ Signature verified"
 echo "💿 Creating DMG installer..."
 rm -f "${DMG_PATH}"
 
-DMG_STAGING="${SCRIPT_DIR}/dist/dmg_staging"
-rm -rf "${DMG_STAGING}"
-mkdir -p "${DMG_STAGING}"
-cp -R "${APP_DIR}" "${DMG_STAGING}/"
-ln -s /Applications "${DMG_STAGING}/Applications"
+# Styled installer window, matching Yapivo's (light background, 128 px icons, app →
+# Applications). dmgbuild writes the window layout directly, no Finder scripting.
+# It ships with electron-builder (Yapivo's toolchain caches a self-contained copy);
+# set DMGBUILD to point elsewhere. Without it, fall back to a plain DMG.
+DMGBUILD="${DMGBUILD:-$(find "${HOME}/Library/Caches/electron-builder" -path "*dmgbuild-bundle-*" \
+    -name dmgbuild -type f -perm -u+x 2>/dev/null | head -1)}"
 
-hdiutil create \
-    -volname "${APP_NAME}" \
-    -srcfolder "${DMG_STAGING}" \
-    -ov \
-    -format UDZO \
-    "${DMG_PATH}" 2>&1
+if [ -n "${DMGBUILD}" ] && [ -x "${DMGBUILD}" ]; then
+    "${DMGBUILD}" -s "${SCRIPT_DIR}/dmg-settings.py" -D app="${APP_DIR}" \
+        "${APP_NAME}" "${DMG_PATH}" 2>&1
+    echo "   ✅ DMG created (styled installer window): ${DMG_PATH}"
+else
+    echo "⚠️  dmgbuild not found — building a plain DMG without the styled window"
+    DMG_STAGING="${SCRIPT_DIR}/dist/dmg_staging"
+    rm -rf "${DMG_STAGING}"
+    mkdir -p "${DMG_STAGING}"
+    cp -R "${APP_DIR}" "${DMG_STAGING}/"
+    ln -s /Applications "${DMG_STAGING}/Applications"
 
-rm -rf "${DMG_STAGING}"
-echo "   ✅ DMG created: ${DMG_PATH}"
+    hdiutil create \
+        -volname "${APP_NAME}" \
+        -srcfolder "${DMG_STAGING}" \
+        -ov \
+        -format UDZO \
+        "${DMG_PATH}" 2>&1
+
+    rm -rf "${DMG_STAGING}"
+    echo "   ✅ DMG created: ${DMG_PATH}"
+fi
 
 # Sign the DMG itself
 codesign --force --sign "${SIGNING_IDENTITY}" --timestamp "${DMG_PATH}"

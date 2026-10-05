@@ -98,16 +98,38 @@ final class LargeTextTests: XCTestCase {
             throw XCTSkip("no local Copibara history")
         }
         try FileManager.default.copyItem(at: live, to: dir.appendingPathComponent("data.json"))
+        // A history that 1.8 already migrated keeps its large clips in texts/.
+        let liveTexts = live.deletingLastPathComponent().appendingPathComponent("texts")
+        if FileManager.default.fileExists(atPath: liveTexts.path) {
+            try FileManager.default.copyItem(at: liveTexts, to: dir.appendingPathComponent("texts"))
+        }
 
-        struct Raw: Decodable { struct Item: Decodable { let id: Int; let content: String }; let items: [Item] }
+        // Expected full text of every clip, read straight from the source files.
+        struct Raw: Decodable {
+            struct Item: Decodable { let id: Int; let content: String; let contentFileName: String? }
+            let items: [Item]
+        }
         let original = try JSONDecoder().decode(Raw.self, from: Data(contentsOf: live)).items
-        let originalText = Dictionary(original.map { ($0.id, $0.content) }, uniquingKeysWith: { a, _ in a })
+        var originalText: [Int: String] = [:]
+        for item in original where originalText[item.id] == nil {
+            if let file = item.contentFileName {
+                originalText[item.id] = try String(contentsOf: liveTexts.appendingPathComponent(file), encoding: .utf8)
+            } else {
+                originalText[item.id] = item.content
+            }
+        }
+        let needsMigration = original.contains {
+            $0.contentFileName == nil && $0.content.utf8.count > CopibaraItem.inlineTextLimit
+        }
 
         var t = Date()
         let migrated = CopibaraStore(directory: dir)        // load + one-time migration
-        print("[perf] first launch (load + migration): \(ms(since: t))")
+        print("[perf] first launch (load\(needsMigration ? " + migration" : ", already migrated")): \(ms(since: t))")
 
-        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("data.pre-1.8-backup.json").path))
+        // A backup is made exactly when there was something to move.
+        XCTAssertEqual(
+            FileManager.default.fileExists(atPath: dir.appendingPathComponent("data.pre-1.8-backup.json").path),
+            needsMigration)
         let spilledCount = migrated.items.filter(\.isTextTruncated).count
         print("[migration] \(spilledCount) clip(s) moved to disk")
 

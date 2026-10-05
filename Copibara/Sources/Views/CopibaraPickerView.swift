@@ -80,6 +80,7 @@ struct CopibaraPickerView: View {
     @State private var activeTypeFilter: ContentType? = nil
     @State private var keyMonitor: Any?
     @State private var globalKeyMonitor: Any?
+    @State private var isCloseHovering = false
     @FocusState private var isSearchFocused: Bool
 
     /// Persisted picker size preference (survives relaunch).
@@ -161,6 +162,20 @@ struct CopibaraPickerView: View {
                     .padding(.vertical, 2)
                     .background(Color.appBorder.opacity(0.5))
                     .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                // A visible way out for anyone who doesn't know about Esc.
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(isCloseHovering ? Color.appTextPrimary : Color.appTextSecondary)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(isCloseHovering ? Color.appSurfaceHover : Color.appBorder.opacity(0.5)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .onHover { isCloseHovering = $0 }
+                .help("Close (Esc)")
+                .accessibilityLabel("Close")
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, 10)
@@ -292,9 +307,13 @@ struct CopibaraPickerView: View {
             // Footer: hints + size toggle
             HStack(spacing: Spacing.sm) {
                 HintLabel(keys: "↑↓", label: "navigate")
-                HintLabel(keys: "tab", label: "board")
-                HintLabel(keys: "⇧tab", label: "filter")
-                HintLabel(keys: "⌘D", label: "star")
+                // The compact picker has no room for all six hints — they wrapped into
+                // fragments ("navi / gat / e"). Keep the essentials there.
+                if pickerSize != .compact {
+                    HintLabel(keys: "tab", label: "board")
+                    HintLabel(keys: "⇧tab", label: "filter")
+                    HintLabel(keys: "⌘D", label: "star")
+                }
                 HintLabel(keys: "↩", label: selectedIndices.count > 1 ? "paste \(selectedIndices.count)" : "paste")
                 HintLabel(keys: "esc", label: "close")
 
@@ -779,5 +798,7 @@ private struct HintLabel: View {
                 .font(.system(size: 9))
                 .foregroundStyle(Color.appTextTertiary)
         }
+        .lineLimit(1)
+        .fixedSize()   // never wrap a hint mid-word
     }
 }
