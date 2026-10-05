@@ -1,0 +1,82 @@
+[
+ {
+  "path": "eye_left",
+  "segments": 8,
+  "corners": 0,
+  "smooth_join_max_deg": 0.08,
+  "dev_max_px": 0.5,
+  "dev_rms_px": 0.25,
+  "wobble_spikes": 0,
+  "inflections": 2
+ },
+ {
+  "path": "eye_right",
+  "segments": 8,
+  "corners": 0,
+  "smooth_join_max_deg": 0.08,
+  "dev_max_px": 0.45,
+  "dev_rms_px": 0.26,
+  "wobble_spikes": 0,
+  "inflections": 2
+ },
+ {
+  "path": "nose",
+  "segments": 4,
+  "corners": 0,
+  "smooth_join_max_deg": 0.05,
+  "dev_max_px": 0.73,
+  "dev_rms_px": 0.44,
+  "wobble_spikes": 0,
+  "inflections": 2
+ },
+ {
+  "path": "clipboard_card",
+  "segments": 16,
+  "corners": 6,
+  "smooth_join_max_deg": 0.06,
+  "dev_max_px": 0.91,
+  "dev_rms_px": 0.44,
+  "wobble_spikes": 0,
+  "inflections": 4
+ },
+ {
+  "path": "line_1",
+  "segments": 6,
+  "corners": 0,
+  "smooth_join_max_deg": 0.0,
+  "dev_max_px": 0.49,
+  "dev_rms_px": 0.28,
+  "wobble_spikes": 2,
+  "inflections": 0
+ },
+ {
+  "path": "line_2",
+  "segments": 6,
+  "corners": 0,
+  "smooth_join_max_deg": 0.0,
+  "dev_max_px": 0.49,
+  "dev_rms_px": 0.27,
+  "wobble_spikes": 2,
+  "inflections": 0
+ },
+ {
+  "path": "line_3",
+  "segments": 6,
+  "corners": 0,
+  "smooth_join_max_deg": 0.0,
+  "dev_max_px": 0.51,
+  "dev_rms_px": 0.27,
+  "wobble_spikes": 2,
+  "inflections": 0
+ },
+ {
+  "path": "body_silhouette",
+  "segments": 23,
+  "corners": 8,
+  "smooth_join_max_deg": 0.05,
+  "dev_max_px": 0.94,
+  "dev_rms_px": 0.39,
+  "wobble_spikes": 0,
+  "inflections": 2
+ }
+]

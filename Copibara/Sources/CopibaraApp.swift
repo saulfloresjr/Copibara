@@ -160,20 +160,30 @@ struct CopibaraApp: App {
         return image
     }()
 
-    /// Menu bar icon — a capybara hugging a clipboard, from the brand asset
-    /// `assets/brand/taskbar-icon-1.png` processed into a monochrome template PNG (white
-    /// background and clipboard interior made transparent). Set as a template image so
-    /// macOS tints it for light/dark menu bars automatically (like Ollama's llama).
-    /// Embedded as base64 so it works identically in `swift run` and the .app bundle,
-    /// with no SPM resource plumbing or build.sh changes.
+    /// Menu bar icon — the flat Copibara mark (capybara hugging a clipboard), rendered from the
+    /// vector rebuild in `assets/brand/vector/` (small variant: eyes and nose enlarged for tiny sizes).
+    /// Two exact renders — 20 px for 1x and 40 px for Retina — so neither display gets a resampled
+    /// image. It's a template image, so macOS tints it for light/dark menu bars automatically.
+    /// Embedded as base64 so it works identically in `swift run` and the .app bundle.
     static let menuBarIcon: NSImage = {
-        let base64 = "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"
-        let img = Data(base64Encoded: base64).flatMap { NSImage(data: $0) }
-            ?? NSImage(systemSymbolName: "clipboard", accessibilityDescription: "Copibara")!
-        img.size = NSSize(width: 20, height: 20)
+        let size = NSSize(width: 20, height: 20)
+        let img = NSImage(size: size)
+        for base64 in [menuBarIcon1x, menuBarIcon2x] {
+            if let data = Data(base64Encoded: base64), let rep = NSBitmapImageRep(data: data) {
+                rep.size = size                     // 40 px rep at 20 pt = 2x
+                img.addRepresentation(rep)
+            }
+        }
+        if img.representations.isEmpty {
+            let fallback = NSImage(systemSymbolName: "clipboard", accessibilityDescription: "Copibara")!
+            fallback.isTemplate = true
+            return fallback
+        }
         img.isTemplate = true
         return img
     }()
+    private static let menuBarIcon1x = "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAABsElEQVR4nJSUzytEURTHDzNkQUgTiinJkgWl/FhgJbGhbEiSnWym7OTXRtn7A5RiYcPKwoIFsTIypMjPlDJISX7zPd65zXHnPTPzrU/v3HvO+7773j33+ShehWAQlIN9clcPaAan4Fkn0qzCDHABimXcBm5BtoyfJLci40tQBr68DHlVJ5SaguDKDNKt5Bk4oOQV1mZuhjlCssqn2Of4lc8qmAatlLzyxGPNTOhvmAmiKa6Q9QAC4JMH+pUbldkQWAID4F3VvMoc54Zljl+7xhRow6CKQ+AQdIBj0CKcg3bJhVR9hQn8alI3KLfPmMR8c0TVdgpaLybQ35Ab9priezORuKn5dEXtFRao+I2c4xX1MCkCc+RsJC8gYGr1aubFhLUFGuh/7YBaidm8nwO9KfUqzpIrb8S3Ra9Vw6ozgd96DaNqMApmyfmraG2CcVDldq82DOsnQSWgFEyouQ/QRX9bjLXnZjgJVtWY24XbYV3Gu2BZ4ohlOGUCu0WawAg5Z5Q3hXe+UnI34EjVboM7MAM2vAyNFsAiePTI54JuinUFJTLk89knVzfdk9MqcQ/8AQAA//9KeklnAAAABklEQVQDABT/TkDPp7xQAAAAAElFTkSuQmCC"
+    private static let menuBarIcon2x = "iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAD10lEQVR4nLyYV+hURxTGv8RAYioxpCgpJJAE0/5GQ0JCLIioKCoogj5YsCKC2BBFVFAs2J5UFETs6IOgIgoKYnmwYUHsvSM27L19n3NX1+uZmXv37/rBj2XPzOw9e8/MmTNTBdn1NalFbieUoi9IHfKIXM8y4O0MfaqSpeQ0WU8Ok67Irx7J2PXJby3MMqhKhj4zSPui7++RlmQ7OYRsakdmk3eLbL+Tz8nK0MC3ENZ35ISnbSepTT5MPjUFaiRt5+DekvrcJAfJT57f+ZJc8LThHYRVO9D2J9lLfkFY++F3TvqbrPA1xhy8FmmPOSfVjLTfDDXGQqwFUuqKzSo9466vMbaK75BxKJ9GI+CcFAuxtBnl05ZYh1iIvyW7yScojy6TCnLW1yEW4gUon3PSZ2RuqEPIwebkf5RfDUkjX2MoxNvIX3gz2kjqWQ0+B6vD7QZvSk/gdpSL6QZfiFsbNm1H6aS6H3EdSH2/YTiiF9XcGuxzsI5hUzWiVT2IdIOb4NpJQjuBSqqaSd/uZGDyG72Mvua26suD1Q3beNKbTCAfwc3PkXDFghyZSj4g98nDpO/HZAMZQRYlf6ZJ8ltpfWPYvHMw7wJRfTgrZetJpiO7tCH8mzb6QnwZ+VTXsNVHPl2xjL4Qn0c+dYaLhkKuMA8jbZFPZtbwvcFS9t9O5Cjc1pjXOe8zfXPwU7hUkOVI8Dr0gFSDkRF8Ib4HV6xWM9p0FvFWwBG1gJ1O9KzH1gDfGxxLBhv2M3C57wZKk9KTEncNo20UGZ42WnNQSbUvbK2qhHNIxq72tPWDUTlZDnaEO1pauoTKy3eCU8JvlzZac7Ax/Er/oQ6IH+I3kSFF30MLT2XXjNADpd/gVzPyPUrXj6RpoL0ibbAWiU5xVeGXQvQzuYp8Ujm1D3ZmKOgWXKifywrx1YiDugBSqlhLfkU4KeuBU+BOhxUR56RXzuGWg8dhVzPFOpZ89iddIn1VeKwjRxDX0bTBclAHpf8Qlmq6E6QPmRfodytxUPoBcc1PG6w5+D5cMjXrs0QqxbYjn3QHEzoHn4K7rHpJ1irWIrFK/oIm4YVzql6epNB8+8cYt5VMC/xuK8voy0kqfZYnD/qqyL4YrvQvSM4odZwsQtXMTLj9PC3dBf6Bly+U9Gd1Htll9A9efehuT1dsWqlatWPw6kWSSqQGyCdVLArnULIDLvV4Fbv6KNYyuDlSC5XTHrgLzTZZOme5PCpoDllC1pDJcOHNIy0+pSVFZEDWQXneoKRFUbgByHvmkHT6U1k1MeuAvA4WS1uS5mis6tYRVAsh7xt/pqcAAAD//wbeIgIAAAAGSURBVAMAyaGyVahvlPQAAAAASUVORK5CYII="
 
     // MARK: - Picker
 

@@ -1,0 +1,30 @@
+{
+ "source": "assets/brand/taskbar-icon-1.png (1254 px, opaque, ink #212121 on white) \u2014 the mark the menu bar icon was made from",
+ "reference_aligned": {
+  "grid": "1254 px source, untransformed",
+  "background": "white paper (the source is opaque)",
+  "models": "arc-to-arc corners restored at circle intersections; text lines as exact capsules; nose convex"
+ },
+ "master": {
+  "canvas": "1024 viewBox (exported 4096)",
+  "placement": "mark height = 90% of canvas, centred on the mirror axis",
+  "transparency": "eyes, nose and card are true cut-outs (the source paints them white)",
+  "symmetry": "mirror-symmetric about x=626.9: body, card and nose built from their left halves and mirrored; right eye = mirrored left eye; text lines unchanged (they are left-aligned). Source asymmetry (mean px): eyes 1.01, nose 1.04, body 1.03, card 1.10; within the 2 px tolerance.",
+  "master_vs_source_rms_px": {
+   "body_silhouette": 0.42,
+   "eye_left": 0.29,
+   "eye_right": 0.31,
+   "nose": 0.43,
+   "clipboard_card": 0.56,
+   "line_1": 0.29,
+   "line_2": 0.29,
+   "line_3": 0.29
+  },
+  "colour": "#212121 sampled from the source"
+ },
+ "small": {
+  "use": "16-32 px (favicon, tiny UI)",
+  "changes": "eyes scaled 1.30x and nose 1.15x about their centroids; curve tolerance 2.2 px"
+ },
+ "light_dark": "master geometry on a 22.37% rounded tile, mark at 74% of the tile"
+}
