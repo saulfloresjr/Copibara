@@ -20,6 +20,9 @@ struct ContentView: View {
     @State private var activeTypeFilter: ContentType? = nil
     @State private var keyMonitor: Any?
     @State private var globalKeyMonitor: Any?
+    /// The tray's own window, read from the view hierarchy. Key handling and closing
+    /// target exactly this window, never a guess picked from `NSApp.windows`.
+    @State private var trayWindow = WindowRef()
 
     /// Whether any overlay modal is showing.
     private var isModalOpen: Bool {
@@ -346,20 +349,20 @@ struct ContentView: View {
         }
         .onKeyPress(characters: .alphanumerics) { handleCommandKey($0) }
         .focusable()
+        .background(WindowReader(ref: trayWindow))
         .onAppear {
             // Aggressively force the MenuBarExtra panel to become key window
             // for keyboard events — run repeatedly to survive focus changes
             for delay in [0.05, 0.15, 0.3] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                    if let window = NSApp.windows.first(where: { $0.isVisible && $0.level.rawValue > 0 }) {
-                        window.makeKey()
-                    }
+                    trayWindow.window?.makeKey()
                 }
             }
+            // Installed once and kept: the handlers check that the tray is the window
+            // being typed into, so they're inert while it's hidden. (Removing them on
+            // disappear risked a tray with no Escape handling if SwiftUI didn't call
+            // onAppear again on the next open.)
             installKeyMonitor()
-        }
-        .onDisappear {
-            removeKeyMonitor()
         }
     }
 
@@ -652,8 +655,13 @@ struct ContentView: View {
     private func installKeyMonitor() {
         removeKeyMonitor() // prevent duplicates
 
-        // Local monitor: fires when this app is active and a window has key status
+        // Local monitor: fires when this app is active and a window has key status.
+        // A local monitor sees keys for *every* Copibara window, so act only on keys
+        // aimed at the tray. Before this check it handled the ⌘⇧V picker's Escape too,
+        // and with a filter left over from the tray it spent that first press
+        // clearing the filter, which is why the picker needed Escape twice.
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in
+            guard let tray = trayWindow.window, event.window === tray else { return event }
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             switch Int(event.keyCode) {
             case 53: // Escape
@@ -674,7 +682,9 @@ struct ContentView: View {
         // Global monitor: catches Escape even when the MenuBarExtra panel
         // isn't key (e.g. focus went to another element or a child menu)
         globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [self] event in
-            if Int(event.keyCode) == 53 { // Escape
+            // Only while the tray is actually open — not every Escape pressed in
+            // other apps.
+            if Int(event.keyCode) == 53, trayWindow.window?.isVisible == true { // Escape
                 DispatchQueue.main.async {
                     _ = self.handleEscapeEvent()
                 }
@@ -693,16 +703,16 @@ struct ContentView: View {
         }
     }
 
-    /// Handles Escape key with priority: modals → selection → close window.
-    /// Returns nil if handled, the event otherwise.
+    /// Escape: close an open dialog if there is one; otherwise close the tray — in one
+    /// press. Returns nil (handled).
+    ///
+    /// It used to peel state off one press at a time (search, then selection, then
+    /// type filter, then the window), so with a Link/Image filter active it always
+    /// took two presses to leave. Now one press closes, and that state is cleared on
+    /// the way out so the next open still starts clean.
     private func handleEscapeEvent() -> NSEvent? {
-        // Force-resign first responder so the SearchBar's @FocusState
-        // doesn't eat this Escape before we can act on it.
-        // Without this, the user needs a double-tap: once to unfocus
-        // the TextField, once to reach our handler.
-        if let window = NSApp.keyWindow {
-            window.makeFirstResponder(nil)
-        }
+        // Resign first responder so the SearchBar's @FocusState doesn't keep focus.
+        trayWindow.window?.makeFirstResponder(nil)
 
         if boardToClear != nil {
             boardToClear = nil
@@ -728,24 +738,12 @@ struct ContentView: View {
             showAddItemSheet = false
             return nil
         }
-        // Clear search text if present
-        if !searchText.isEmpty {
-            searchText = ""
-            return nil
-        }
-        if !selectedItemIds.isEmpty {
-            withAnimation { selectedItemIds.removeAll(); lastClickedId = nil }
-            return nil
-        }
-        // Clear type filter if active
-        if activeTypeFilter != nil {
-            activeTypeFilter = nil
-            return nil
-        }
-        // Nothing open — dismiss the MenuBarExtra window
-        if let window = NSApp.windows.first(where: { $0.isVisible && $0.className.contains("StatusBarWindow") || ($0.isVisible && $0.level.rawValue > 0) }) {
-            window.orderOut(nil)
-        }
+        // No dialog open — close the tray, resetting the transient view state.
+        searchText = ""
+        selectedItemIds.removeAll()
+        lastClickedId = nil
+        activeTypeFilter = nil
+        trayWindow.window?.orderOut(nil)
         NSApp.deactivate()
         return nil
     }
@@ -799,6 +797,35 @@ struct ContentView: View {
             activeTypeFilter = allTypes.first
         }
         selectedItemIds.removeAll()
+    }
+}
+
+// MARK: - Window Reference
+
+/// A weak handle on the window a view lives in.
+final class WindowRef {
+    weak var window: NSWindow?
+}
+
+/// Records the hosting window into `ref` as soon as the view is placed in one.
+private struct WindowReader: NSViewRepresentable {
+    let ref: WindowRef
+
+    func makeNSView(context: Context) -> NSView { ReaderView(ref: ref) }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class ReaderView: NSView {
+        let ref: WindowRef
+        init(ref: WindowRef) {
+            self.ref = ref
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError("not used") }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { ref.window = window }
+        }
     }
 }
 
