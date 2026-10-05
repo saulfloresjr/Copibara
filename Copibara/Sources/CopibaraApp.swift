@@ -251,7 +251,7 @@ struct CopibaraApp: App {
                 print("[Copibara] Image placed on clipboard: \(fileName)")
             }
         } else {
-            pasteboard.setString(item.content, forType: .string)
+            pasteboard.setString(services.store.fullText(for: item), forType: .string)
             print("[Copibara] Text placed on clipboard (\(item.content.prefix(50))...)")
         }
 
@@ -318,7 +318,7 @@ struct CopibaraApp: App {
                 let url = services.store.imagesDir.appendingPathComponent(fileName)
                 if let data = try? Data(contentsOf: url) { payloads.append(.image(data)) }
             } else if !item.content.isEmpty {
-                payloads.append(.text(item.content))
+                payloads.append(.text(services.store.fullText(for: item)))
             }
         }
         guard !payloads.isEmpty else { services.monitor?.start(); return }

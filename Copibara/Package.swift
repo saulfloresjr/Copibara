@@ -13,6 +13,11 @@ let package = Package(
             resources: [
                 .copy("Resources")
             ]
+        ),
+        .testTarget(
+            name: "CopibaraTests",
+            dependencies: ["Copibara"],
+            path: "Tests/CopibaraTests"
         )
     ]
 )

@@ -94,8 +94,9 @@ final class CopibaraMonitor {
             return
         }
 
-        // Avoid duplicating the most recent item
-        if let latest = store?.items.first, latest.content == content {
+        // Avoid duplicating the most recent item (compares full text, even when the
+        // latest clip was large enough to be stored on disk)
+        if store?.isSameAsLatest(content) == true {
             return
         }
 

@@ -28,10 +28,19 @@ final class CopibaraStore {
 
     private let fileURL: URL
     let imagesDir: URL
+    /// Full text of clips larger than `CopibaraItem.inlineTextLimit`.
+    let textsDir: URL
 
-    init() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = appSupport.appendingPathComponent("CopibaraManager", isDirectory: true)
+    /// Writes happen here, off the main thread, in the order they were requested.
+    private let saveQueue = DispatchQueue(label: "com.copibara.save", qos: .utility)
+    /// A save is already queued for the next main-loop turn; further `save()` calls in
+    /// the same turn ride along with it.
+    private var saveScheduled = false
+
+    /// `directory` is for tests; the app always uses Application Support.
+    init(directory: URL? = nil) {
+        let appDir = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("CopibaraManager", isDirectory: true)
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
         self.fileURL = appDir.appendingPathComponent("data.json")
 
@@ -39,7 +48,57 @@ final class CopibaraStore {
         self.imagesDir = appDir.appendingPathComponent("images", isDirectory: true)
         try? FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
 
+        self.textsDir = appDir.appendingPathComponent("texts", isDirectory: true)
+        try? FileManager.default.createDirectory(at: textsDir, withIntermediateDirectories: true)
+
         load()
+    }
+
+    // MARK: - Large text
+
+    /// The complete text of a clip — read from disk when it was too large to keep
+    /// inline. Paste and copy go through this; previews and search use `content`.
+    func fullText(for item: CopibaraItem) -> String {
+        guard let fileName = item.contentFileName,
+              let text = try? String(contentsOf: textsDir.appendingPathComponent(fileName), encoding: .utf8)
+        else { return item.content }
+        return text
+    }
+
+    /// If `item`'s text is over the inline limit, write the full text to `texts/` and
+    /// return the item holding just its head. If the write fails the item is returned
+    /// untouched — keeping the text in memory beats losing it.
+    private func spillIfLarge(_ item: CopibaraItem) -> CopibaraItem {
+        guard item.imageFileName == nil,
+              item.contentFileName == nil,
+              item.content.utf8.count > CopibaraItem.inlineTextLimit else { return item }
+        let fileName = "text_\(item.id).txt"
+        do {
+            try item.content.write(to: textsDir.appendingPathComponent(fileName), atomically: true, encoding: .utf8)
+            return item.spilled(to: fileName)
+        } catch {
+            print("[Copibara] couldn't store large clip \(item.id) on disk, keeping it inline: \(error)")
+            return item
+        }
+    }
+
+    /// Whether `content` is what the newest clip already holds — the monitor's
+    /// duplicate check. Compares sizes first so a large clip is only read back from
+    /// disk when it could actually be the same.
+    func isSameAsLatest(_ content: String) -> Bool {
+        guard let latest = items.first, latest.imageFileName == nil else { return false }
+        guard latest.isTextTruncated else { return latest.content == content }
+        return latest.size == content.utf8.count && fullText(for: latest) == content
+    }
+
+    /// Delete the files a clip owns on disk — its screenshot and/or its full text.
+    private func removeFiles(for item: CopibaraItem) {
+        if let fileName = item.imageFileName {
+            try? FileManager.default.removeItem(at: imagesDir.appendingPathComponent(fileName))
+        }
+        if let fileName = item.contentFileName {
+            try? FileManager.default.removeItem(at: textsDir.appendingPathComponent(fileName))
+        }
     }
 
     // MARK: - Persistence
@@ -78,25 +137,79 @@ final class CopibaraStore {
         // clips are untouched. Persist immediately so the trim survives a crash.
         let before = items.count
         trimIfNeeded()
-        if items.count != before { save() }
+        let migrated = migrateLargeText()
+        if items.count != before || migrated { saveNow() }
 
-        // Save on app quit to make sure nothing is lost
+        // Save on app quit to make sure nothing is lost. Synchronous: a queued
+        // background write wouldn't finish before the process exits.
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.save()
+            self?.saveNow()
         }
     }
 
+    /// One-time move of oversized clips saved before large text went to disk.
+    /// Before touching anything it copies data.json to data.pre-1.8-backup.json, so
+    /// the original history can be restored if this ever goes wrong.
+    /// Returns whether any clip moved.
+    private func migrateLargeText() -> Bool {
+        let oversized = items.indices.filter {
+            items[$0].imageFileName == nil && items[$0].contentFileName == nil
+                && items[$0].content.utf8.count > CopibaraItem.inlineTextLimit
+        }
+        guard !oversized.isEmpty else { return false }
+
+        let backup = fileURL.deletingLastPathComponent().appendingPathComponent("data.pre-1.8-backup.json")
+        if !FileManager.default.fileExists(atPath: backup.path) {
+            do {
+                try FileManager.default.copyItem(at: fileURL, to: backup)
+            } catch {
+                // No backup, no migration: leave the data exactly as it was.
+                print("[Copibara] large-text migration skipped, couldn't back up data.json: \(error)")
+                return false
+            }
+        }
+
+        var moved = 0
+        for index in oversized {
+            let item = spillIfLarge(items[index])
+            if item.isTextTruncated { items[index] = item; moved += 1 }
+        }
+        print("[Copibara] moved \(moved) large clip(s) to disk (backup: \(backup.lastPathComponent))")
+        return moved > 0
+    }
+
+    /// Persist the store without blocking the UI. Calls made in the same main-loop
+    /// turn coalesce into one write, and the JSON encode + disk write run on a
+    /// background queue. Must be called on the main thread, like every other store
+    /// mutation.
     func save() {
-        let store = StoreData(items: items, pinboards: pinboards, nextId: nextId)
+        guard !saveScheduled else { return }
+        saveScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.saveScheduled = false
+            let snapshot = StoreData(items: self.items, pinboards: self.pinboards, nextId: self.nextId)
+            let url = self.fileURL
+            self.saveQueue.async { Self.write(snapshot, to: url) }
+        }
+    }
+
+    /// Persist right now on the calling thread, after any queued writes — for launch
+    /// migrations and quit, where the write has to land before we continue.
+    func saveNow() {
+        saveQueue.sync {}   // let in-flight writes finish first so this one lands last
+        Self.write(StoreData(items: items, pinboards: pinboards, nextId: nextId), to: fileURL)
+    }
+
+    private static func write(_ store: StoreData, to url: URL) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = .prettyPrinted
         guard let data = try? encoder.encode(store) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        try? data.write(to: url, options: .atomic)
     }
 
     // MARK: - Items
@@ -156,11 +269,7 @@ final class CopibaraStore {
             removed.append(item)
             return true
         }
-        for item in removed {
-            if let fileName = item.imageFileName {
-                try? FileManager.default.removeItem(at: imagesDir.appendingPathComponent(fileName))
-            }
-        }
+        for item in removed { removeFiles(for: item) }
         if !removed.isEmpty {
             print("[Copibara] history cap: trimmed \(removed.count) old unpinned item(s)")
         }
@@ -179,10 +288,11 @@ final class CopibaraStore {
             size: content.utf8.count
         )
         nextId += 1
-        items.insert(item, at: 0)
+        let stored = spillIfLarge(item)
+        items.insert(stored, at: 0)
         trimIfNeeded()
         save()
-        return item
+        return stored
     }
 
     /// Add an image item (e.g. from a screenshot).
@@ -282,7 +392,7 @@ final class CopibaraStore {
             pinned: true
         )
         nextId += 1
-        items.insert(item, at: 0)
+        items.insert(spillIfLarge(item), at: 0)
         save()
 
         let headline = resolved.displaySource.map { "Collected from \($0)" } ?? "Collected"
@@ -412,11 +522,8 @@ final class CopibaraStore {
     }
 
     func deleteItem(id: Int) {
-        // If it's an image item, also delete the image file
-        if let item = items.first(where: { $0.id == id }), let fileName = item.imageFileName {
-            let fileURL = imagesDir.appendingPathComponent(fileName)
-            try? FileManager.default.removeItem(at: fileURL)
-        }
+        // Also delete its image / full-text file
+        if let item = items.first(where: { $0.id == id }) { removeFiles(for: item) }
         items.removeAll { $0.id == id }
         save()
     }
@@ -425,27 +532,15 @@ final class CopibaraStore {
         // Safety: never clear from a virtual board — "All" and "Favorites" are views
         // over the real boards, so there's no single board here to empty.
         guard !BoardFilter.isVirtual(activeBoard) else { return }
-        // Delete image files for items being cleared
-        let toRemove = items.filter { $0.boardId == activeBoard }
-        for item in toRemove {
-            if let fileName = item.imageFileName {
-                let fileURL = imagesDir.appendingPathComponent(fileName)
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-        }
+        // Delete image / full-text files for items being cleared
+        for item in items where item.boardId == activeBoard { removeFiles(for: item) }
         items.removeAll { $0.boardId == activeBoard }
         save()
     }
 
     /// Clear a specific board by its ID (used from the "All" board menu).
     func clearBoard(id: String) {
-        let toRemove = items.filter { $0.boardId == id }
-        for item in toRemove {
-            if let fileName = item.imageFileName {
-                let fileURL = imagesDir.appendingPathComponent(fileName)
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-        }
+        for item in items where item.boardId == id { removeFiles(for: item) }
         items.removeAll { $0.boardId == id }
         save()
     }
@@ -459,12 +554,7 @@ final class CopibaraStore {
     /// paste every day. To remove them, unfavourite them, clear the Collected board
     /// directly, or delete them individually.
     func clearAllBoards() {
-        for item in items where !item.isKept {
-            if let fileName = item.imageFileName {
-                let fileURL = imagesDir.appendingPathComponent(fileName)
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-        }
+        for item in items where !item.isKept { removeFiles(for: item) }
         items.removeAll { !$0.isKept }
         save()
     }
@@ -492,7 +582,7 @@ final class CopibaraStore {
                 pasteboard.setData(imageData, forType: .png)
             }
         } else {
-            pasteboard.setString(item.content, forType: .string)
+            pasteboard.setString(fullText(for: item), forType: .string)
         }
     }
 
@@ -509,7 +599,7 @@ final class CopibaraStore {
         let imageItems = selected.filter { $0.imageFileName != nil }
 
         if !textItems.isEmpty {
-            let combined = textItems.map(\.content).joined(separator: "\n\n")
+            let combined = textItems.map { fullText(for: $0) }.joined(separator: "\n\n")
             pasteboard.setString(combined, forType: .string)
         } else if let firstImage = imageItems.first, let fileName = firstImage.imageFileName {
             let fileURL = imagesDir.appendingPathComponent(fileName)
@@ -519,14 +609,9 @@ final class CopibaraStore {
         }
     }
 
-    /// Bulk-delete multiple items (including their image files).
+    /// Bulk-delete multiple items (including their image / full-text files).
     func deleteItems(ids: Set<Int>) {
-        for item in items where ids.contains(item.id) {
-            if let fileName = item.imageFileName {
-                let fileURL = imagesDir.appendingPathComponent(fileName)
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-        }
+        for item in items where ids.contains(item.id) { removeFiles(for: item) }
         items.removeAll { ids.contains($0.id) }
         save()
     }
@@ -592,14 +677,8 @@ final class CopibaraStore {
 
     func deletePinboard(id: String) {
         guard pinboards.contains(where: { $0.id == id }) else { return }
-        // Delete all items in this board (including image files)
-        let boardItems = items.filter { $0.boardId == id }
-        for item in boardItems {
-            if let fileName = item.imageFileName {
-                let fileURL = imagesDir.appendingPathComponent(fileName)
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-        }
+        // Delete all items in this board (including image / full-text files)
+        for item in items where item.boardId == id { removeFiles(for: item) }
         items.removeAll { $0.boardId == id }
         pinboards.removeAll { $0.id == id }
         if activeBoard == id {
@@ -619,8 +698,8 @@ final class CopibaraStore {
         case BoardFilter.favorites: result = items.filter(\.isFavorite)
         default:                    result = items.filter { $0.boardId == activeBoard }
         }
-        if !search.isEmpty {
-            let query = search.lowercased()
+        let query = SearchQuery(search)
+        if !query.isEmpty {
             result = result.filter { $0.matches(query) }
         }
         return result

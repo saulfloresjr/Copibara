@@ -128,14 +128,15 @@ struct CopibaraPickerView: View {
             result = result.filter { $0.type == typeFilter }
         }
 
-        if searchText.isEmpty {
+        let query = SearchQuery(searchText)
+        if query.isEmpty {
             return Array(result.prefix(50))
         }
-        let query = searchText.lowercased()
-        return result.filter {
-            $0.content.lowercased().contains(query) ||
-            $0.type.label.lowercased().contains(query)
-        }.prefix(50).map { $0 }
+        // Same matcher as the main window. The old form lowercased a full copy of every
+        // clip's text on each keystroke *and* each arrow press (body re-runs on
+        // selection change) — about 6 s and hundreds of MB per pass on a 10k history.
+        // `lazy` stops scanning once the 50 shown rows are found.
+        return Array(result.lazy.filter { $0.matches(query) }.prefix(50))
     }
 
     var body: some View {

@@ -9,6 +9,11 @@ struct DetailPanelView: View {
     var isFavorite: Bool = false
     var onToggleFavorite: (() -> Void)? = nil
 
+    @State private var image: NSImage?
+    /// The load for this item finished (with or without an image), so the
+    /// placeholder can give way to the text fallback.
+    @State private var imageLoaded = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
@@ -49,31 +54,37 @@ struct DetailPanelView: View {
             // Content
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.base) {
-                    // Full content preview
+                    // Content preview
                     if item.type == .code {
-                        Text(item.content)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.appTextPrimary)
+                        textBody(font: .system(size: 11, design: .monospaced), selectable: false)
                             .padding(Spacing.md)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.appBackground)
                             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
                     } else if item.type == .image {
-                        if let nsImage = loadItemImage() {
+                        if let nsImage = image {
                             Image(nsImage: nsImage)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
-                        } else {
+                        } else if imageLoaded {
                             Text(item.content)
                                 .font(.system(size: 13))
                                 .foregroundStyle(Color.appTextPrimary)
+                        } else {
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
+                                .fill(Color.appSurfaceHover)
+                                .aspectRatio(4 / 3, contentMode: .fit)
+                                .overlay(ProgressView().controlSize(.small))
                         }
                     } else {
-                        Text(item.content)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.appTextPrimary)
-                            .textSelection(.enabled)
+                        textBody(font: .system(size: 13), selectable: true)
+                    }
+
+                    if isPartial {
+                        Text("Showing the first \(formatSize(shownText.utf8.count)) of \(formatSize(item.size)). Copy and paste use the full text.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.appTextTertiary)
                     }
 
                     Divider()
@@ -127,6 +138,71 @@ struct DetailPanelView: View {
                 .fill(Color.appBorder)
                 .frame(width: 1)
         }
+        // Decode off the main thread. This used to run synchronously in `body`, so
+        // arrowing onto a large screenshot froze the window for up to ~200 ms.
+        .task(id: item.id) {
+            image = nil
+            imageLoaded = false
+            guard item.type == .image, let url = imageURL else { imageLoaded = true; return }
+            image = await ImageThumbnail.loadAsync(url, maxPixel: 1200)
+            imageLoaded = true
+        }
+    }
+
+    // MARK: - Text
+
+    /// Short clips render as one `Text`, as always (whole-clip selection works).
+    /// Above this, the text is split into chunks in a lazy stack so only what's on
+    /// screen gets laid out. A single `Text` for a multi-megabyte clip took 140 ms
+    /// for 2.6 MB just to size, and scaled up from there.
+    private static let singleTextLimit = 8 * 1024
+    private static let chunkSize = 4 * 1024
+
+    /// What the panel shows: never more than the inline limit.
+    private var shownText: String { item.content.utf8Prefix(CopibaraItem.inlineTextLimit) }
+
+    /// True when the panel isn't showing the whole clip.
+    private var isPartial: Bool {
+        item.isTextTruncated || shownText.utf8.count < item.content.utf8.count
+    }
+
+    @ViewBuilder
+    private func textBody(font: Font, selectable: Bool) -> some View {
+        let text = shownText
+        if text.utf8.count <= Self.singleTextLimit {
+            if selectable {
+                Text(text).font(font).foregroundStyle(Color.appTextPrimary).textSelection(.enabled)
+            } else {
+                Text(text).font(font).foregroundStyle(Color.appTextPrimary)
+            }
+        } else {
+            let chunks = Self.chunks(of: text)
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(chunks.indices, id: \.self) { index in
+                    Text(chunks[index])
+                        .font(font)
+                        .foregroundStyle(Color.appTextPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    /// Split at line breaks into pieces of roughly `chunkSize` bytes, so no chunk
+    /// boundary falls mid-line (unless a single line is itself that long).
+    private static func chunks(of text: String) -> [String] {
+        var result: [String] = []
+        var current = ""
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if !current.isEmpty { current += "\n" }
+            current += line
+            if current.utf8.count >= chunkSize {
+                result.append(current)
+                current = ""
+            }
+        }
+        if !current.isEmpty { result.append(current) }
+        return result
     }
 }
 
@@ -169,16 +245,14 @@ private struct DetailButtonStyle: ButtonStyle {
 }
 
 extension DetailPanelView {
-    /// Load the image from ~/Library/Application Support/CopibaraManager/images/
-    private func loadItemImage() -> NSImage? {
+    /// The stored image in ~/Library/Application Support/CopibaraManager/images/.
+    /// Previewed at 1200 px (larger than the grid, still capped so a huge capture
+    /// doesn't decode full-res just for the detail pane).
+    private var imageURL: URL? {
         guard let fileName = item.imageFileName else { return nil }
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let imagePath = appSupport
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("CopibaraManager", isDirectory: true)
             .appendingPathComponent("images", isDirectory: true)
             .appendingPathComponent(fileName)
-        // Larger preview than the grid, but still capped so a huge capture doesn't
-        // decode full-res just for the detail pane.
-        return ImageThumbnail.load(imagePath, maxPixel: 1200)
     }
 }

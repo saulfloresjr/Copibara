@@ -33,8 +33,8 @@ struct CopibaraGridView: View {
         case BoardFilter.favorites: result = store.items.filter(\.isFavorite)
         default:                    result = store.items.filter { $0.boardId == store.activeBoard }
         }
-        if !searchText.isEmpty {
-            let query = searchText.lowercased()
+        let query = SearchQuery(searchText)
+        if !query.isEmpty {
             result = result.filter { $0.matches(query) }
         }
         if let typeFilter = activeTypeFilter {
