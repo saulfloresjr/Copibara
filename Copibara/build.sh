@@ -92,6 +92,8 @@ cat > "${APP_DIR}/Contents/Info.plist" << PLIST
     <string>${VERSION}</string>
     <key>CFBundleShortVersionString</key>
     <string>${VERSION}</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Copibara · Dream Meridian</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key>
